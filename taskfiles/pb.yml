@@ -38,26 +38,13 @@ tasks:
         echo "Docs:  {{.PB_URL_DOCS}}"
         echo "Admin: {{.PB_URL_LOCAL_ADMIN}}"
 
-  # === Development ===
-  dev:
-    desc: Run in development mode
-    env:
-      GOWORK: "off"
-    cmds:
-      - echo "Starting PocketBase on {{.PB_URL_LOCAL}} (Admin {{.PB_URL_LOCAL_ADMIN}})"
-      - go run main.go serve --http "{{.PB_HOST}}:{{.PB_PORT}}"
-
+  # === Dependencies ===
   deps:
     desc: Update Go dependencies
     env:
       GOWORK: "off"
     cmds:
       - go mod tidy
-
-  serve:
-    desc: Serve the built binary
-    cmds:
-      - ./{{.BINARY}} serve --http "{{.PB_HOST}}:{{.PB_PORT}}"
 
   # === Build ===
   build:
@@ -118,7 +105,7 @@ tasks:
     desc: Delete PocketBase data for fresh start
     cmds:
       - rm -rf pb_data
-      - 'echo "✓ Cleaned. Run: task pb:dev && task pb:1-superuser"'
+      - 'echo "✓ Cleaned. Run: task pc:up, then task pb:1-superuser"'
 
   # === Source Reference ===
   src:clone:
