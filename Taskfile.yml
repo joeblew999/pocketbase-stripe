@@ -122,22 +122,6 @@ tasks:
     cmds:
       - go build -o {{.BINARY}}-windows-amd64.exe main.go
 
-  # === Source Reference ===
-  src:clone:
-    desc: Clone PocketBase source for reference (helps with future upgrades)
-    cmds:
-      - mkdir -p .src
-      - git clone --depth 1 --branch v0.34.2 https://github.com/pocketbase/pocketbase.git .src/pocketbase
-    status:
-      - test -d .src/pocketbase
-
-  src:update:
-    desc: Update PocketBase source to specific version
-    dir: .src/pocketbase
-    cmds:
-      - git fetch --tags
-      - git checkout v0.34.2
-
   # === Gitignore ===
   gitignore:
     desc: Generate .gitignore from all taskfile patterns
@@ -172,34 +156,13 @@ tasks:
   # === Info ===
   info:
     desc: Show current configuration status
+    silent: true
     cmds:
       - |
-        echo ""
         echo "=== CONFIGURATION STATUS ==="
         echo ""
         echo "Binary: {{.BINARY}}"
+        echo "Server: {{.PB_URL_LOCAL}} ({{.PB_HOST}}:{{.PB_PORT}})"
+        echo "Admin:  {{.PB_URL_LOCAL_ADMIN}}"
         echo ""
-        echo "Server:"
-        echo "  PB_HOST: {{.PB_HOST}}"
-        echo "  PB_PORT: {{.PB_PORT}}"
-        echo "  URL: {{.PB_URL_LOCAL}}"
-        echo "  Admin: {{.PB_URL_LOCAL_ADMIN}}"
-        echo ""
-        echo "Stripe Secrets:"
-        if [ -n "${STRIPE_SECRET_KEY}" ]; then
-          echo "  ✓ STRIPE_SECRET_KEY: [SET]"
-        else
-          echo "  ✗ STRIPE_SECRET_KEY: [NOT SET]"
-        fi
-        if [ -n "${STRIPE_WHSEC}" ]; then
-          echo "  ✓ STRIPE_WHSEC: [SET]"
-        else
-          echo "  ✗ STRIPE_WHSEC: [NOT SET]"
-        fi
-        echo ""
-        echo "Stripe URLs:"
-        echo "  STRIPE_SUCCESS_URL: ${STRIPE_SUCCESS_URL:-[NOT SET]}"
-        echo "  STRIPE_CANCEL_URL: ${STRIPE_CANCEL_URL:-[NOT SET]}"
-        echo "  STRIPE_BILLING_RETURN_URL: ${STRIPE_BILLING_RETURN_URL:-[NOT SET]}"
-        echo ""
-    silent: true
+      - task stripe:info

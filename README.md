@@ -1,197 +1,144 @@
-# Pocketbase + Stripe - Extended PocketBase Using Stripe Webhooks
+# PocketBase + Stripe
 
-The all-in-one starter kit for high-performance SaaS applications. That don't want a vendor buy in when it comes to backend and frontend. This is a front end agnostic template that you can use 100% with any SaaS application. If there are any issues please feel free to reach out to me on X - [@meinbiz](https://twitter.com/meinbiz)
-
-Also if you want to build a next.js front end for your next app. Consider [fastpocket.dev](https://fastpocket.dev) it is the fastest way to build a fully fledged PocketBase app.
+The all-in-one starter kit for high-performance SaaS applications. Frontend-agnostic backend with [PocketBase](https://pocketbase.io) and [Stripe](https://stripe.com) integration.
 
 [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/izeSvS?referralCode=9ynQqF)
 
 ## Features
 
 - User management and authentication with [PocketBase](https://pocketbase.io/docs/authentication)
-- Powerful data access & management tooling on top of SQL Lite with [PocketBase](https://Pocketbase.io/docs/guides/database)
-- Integration with [Stripe Checkout](https://stripe.com/docs/payments/checkout) and the [Stripe customer portal](https://stripe.com/docs/billing/subscriptions/customer-portal)
+- Powerful data access & management on top of SQLite with [PocketBase](https://pocketbase.io/docs/guides/database)
+- Integration with [Stripe Checkout](https://stripe.com/docs/payments/checkout) and [Stripe Customer Portal](https://stripe.com/docs/billing/subscriptions/customer-portal)
 - Automatic syncing of pricing plans and subscription statuses via [Stripe webhooks](https://stripe.com/docs/webhooks)
 
-## Step-by-step setup
+## Quick Start
 
-When deploying this template, the sequence of steps is important. Follow the steps below in order to get up and running.
+### Prerequisites
 
-### Configure Stripe
+- [Go 1.24+](https://go.dev/dl/)
+- [Task](https://taskfile.dev/installation/) (task runner)
+- [Stripe CLI](https://stripe.com/docs/stripe-cli) (installed via `task stripe:1-install`)
 
-Next, we'll need to configure [Stripe](https://stripe.com/) to handle test payments. If you don't already have a Stripe account, create one now.
-
-For the following steps, make sure you have the ["Test Mode" toggle](https://stripe.com/docs/testing) switched on.
-
-#### Create a webhook
-
-We need to create a webhook in the `Developers` section of Stripe.
-
-1. Click the "Add Endpoint" button on the [test Endpoints page](https://dashboard.stripe.com/test/webhooks).
-1. Enter your production deployment URL followed by `/api/webhooks` for the endpoint URL. (e.g. `https://your-deployment-url.vercel.app/api/webhooks`)
-1. Click `Select events` under the `Select events to listen to` heading.
-1. Click `Select all events` in the `Select events to send` section.
-1. Copy `Signing secret` as we'll need that in the next step.
-
-#### Create product and pricing information
-
-Your application's webhook listens for product updates on Stripe and automatically propagates them to your Pocketbase database. So with your webhook listener running, you can now create your product and pricing information in the [Stripe Dashboard](https://dashboard.stripe.com/test/products).
-
-Stripe Checkout currently supports pricing that bills a predefined amount at a specific interval. More complex plans (e.g., different pricing tiers or seats) are not yet supported.
-
-For example, you can create business models with different pricing tiers, e.g.:
-
-- Product 1: Hobby
-  - Price 1: 10 USD per month
-  - Price 2: 100 USD per year
-- Product 2: Freelancer
-  - Price 1: 20 USD per month
-  - Price 2: 200 USD per year
-
-Optionally, to speed up the setup, we have added a [fixtures file](stripe_bootstrap/stripe-fixtures.json) to bootstrap test product and pricing data in your Stripe account. The [Stripe CLI](https://stripe.com/docs/stripe-cli#install) `fixtures` command executes a series of API requests defined in this JSON file. Simply run `stripe fixtures stripe_bootstrap/stripe-fixtures.json`.
-
-**Important:** Make sure that you've configured your Stripe webhook correctly and redeployed with all needed environment variables.
-
-#### Configure the Stripe customer portal
-
-1. Set your custom branding in the [settings](https://dashboard.stripe.com/settings/branding)
-1. Configure the Customer Portal [settings](https://dashboard.stripe.com/test/settings/billing/portal)
-1. Toggle on "Allow customers to update their payment methods"
-1. Toggle on "Allow customers to update subscriptions"
-1. Toggle on "Allow customers to cancel subscriptions"
-1. Add the products and prices that you want
-1. Set up the required business information and links
-
-### Configure Pocketbase
-
-1. clone this package
-1. set your environment variables to the following
-   1. STRIPE_SECRET_KEY=sk_test...
-   1. STRIPE*SECRET_WHSEC=WHSEC*...
-   1. STRIPE_CANCEL_URL=url_to_your_site_after_checkout_cancel
-   1. STRIPE_SUCCESS_URL=url_to_your_site_after_checkout_success
-   1. HOST=url_to_where_pocketbase_is_hosted
-   1. DEVELOPMENT="" <-- leave blank if deploying live
-1. Run `go run main.go serve` from a command line in the root of the folder
-1. Go to a webbrowser and browse to `https://127.0.0.1:8090/_/` and create new admin account and login
-1. Click `Settings` on the left hand side bar and go to `Import Collections`
-1. Click `Load from JSON file` and grab the schema file from `pb_bootstrap/pb_schema.json`
-1. Exit the `go run main.go` command
-1. Run `stripe listen --print-secret --api-key "$STRIPE_SECRET_KEY" > secret.txt` to get your secret key in a `secret.txt` file. Note: this needs to be in the root of your project and is machine specific
-1. Re-run `go run main.go serve`
-1. Configure your authentication settings (this is optional for testing but required for prod)
-1. Finally you will need to host or provide a self-signed cert to use with stripe in dev or you will need to host **WEBHOOKS WILL NOT WORK WITHOUT HOSTING**
-
-### Connect to Your Front End
-
-1. You can add the pricing information and authentication to your front end app. You have a fully functioning backend subscription service that you can host and control.
-
-### That's it
-
-I know, that was quite a lot to get through, but it's worth it. You're now ready to earn recurring revenue from your customers. 🥳
-
-### Use the Stripe CLI to test webhooks
-
-[Install the Stripe CLI](https://stripe.com/docs/stripe-cli) and [link your Stripe account](https://stripe.com/docs/stripe-cli#login-account).
-
-Next, start local webhook forwarding:
+### Setup
 
 ```bash
-stripe listen --forward-to=127.0.0.1:8090/api/webhooks
+# Clone and enter the repo
+git clone https://github.com/joeblew999/pocketbase-stripe.git
+cd pocketbase-stripe
+
+# One-time Stripe setup
+task stripe:1-install    # Install Stripe CLI
+task stripe:2-login      # Authenticate with Stripe
+task stripe:3-env        # Create .env from template
+task stripe:4-fixtures   # Load test products
+
+# One-time PocketBase setup
+task pb:1-superuser      # Create admin account
+task pb:2-schema         # Import collections schema
+
+# Run the application
+task pc:up               # Recommended: process-compose (PocketBase + Stripe listener)
+# OR
+task dev                 # Direct: just PocketBase (run stripe:5-listen separately)
+# OR
+task docker:build && task docker:run  # Docker container
 ```
 
-Running this Stripe command will print a webhook secret (such as, `whsec_***`) to the console. Set `STRIPE_WEBHOOK_SECRET` to this value in your `.env.local` file.
+## Development Options
 
-Please note that stripe wont forward to http. You will need to ensure you are working in an environment where you have an SSL certificate installed
+See **[DEVELOPMENT.md](DEVELOPMENT.md)** for detailed development workflows including:
 
-## Going live
+- **process-compose** - Runs PocketBase + Stripe listener together with TUI
+- **Docker** - Containerized environment for CI/CD
+- **Direct** - Simple `go run` for quick iteration
 
-### Archive testing products
+```bash
+task --list              # See all available tasks
+task info                # Show current configuration
+task debug               # Print all Taskfile vars
+```
 
-Archive all test mode Stripe products before going live. Before creating your live mode products, make sure to follow the steps below to set up your live mode env vars and webhooks.
+## Configuration
 
-### Configure production environment variables
+All approaches use the same `.env` file. See `.env.example`:
 
-To run the project in live mode and process payments with Stripe, switch Stripe from "test mode" to "production mode." Your Stripe API keys will be different in production mode, and you will have to create a separate production mode webhook. Copy these values and paste them into Vercel, replacing the test mode values.
+| Variable | Purpose |
+|----------|---------|
+| `STRIPE_SECRET_KEY` | Stripe API key (sk_test_xxx) |
+| `STRIPE_WHSEC` | Webhook signing secret (whsec_xxx) |
+| `STRIPE_SUCCESS_URL` | Checkout success redirect |
+| `STRIPE_CANCEL_URL` | Checkout cancel redirect |
+| `PB_HOST` | Server bind address (default: 0.0.0.0) |
+| `PB_PORT` | Server port (default: 8090) |
 
-### Redeploy
+## Stripe Setup Details
 
-Afterward, you will need to rebuild your production deployment for the changes to take effect. Within your project Dashboard, navigate to the "Deployments" tab, select the most recent deployment, click the overflow menu button (next to the "Visit" button) and select "Redeploy" (do NOT enable the "Use existing Build Cache" option).
+### Create Products and Prices
 
-To verify you are running in production mode, test checking out with the [Stripe test card](https://stripe.com/docs/testing). The test card should not work.
+Your webhook listens for product updates on Stripe and automatically syncs them to PocketBase. Create products in the [Stripe Dashboard](https://dashboard.stripe.com/test/products) or use our fixtures:
 
-## A note on reliability
+```bash
+task stripe:4-fixtures   # Creates Hobby ($10/mo) and Freelancer ($20/mo) plans
+```
 
-This template mirrors completed Stripe transactions to the Pocketbase database. This means that if the Pocketbase database is unavailable, the Stripe transaction will still succeed, but the Pocketbase database will not be updated, and the application will pass an error code back to Stripe. [By default](https://stripe.com/docs/webhooks/best-practices), Stripe will retry sending its response to the webhook for up to three days, or until the database update succeeds. This means that the Stripe transaction will eventually be reflected in the Pocketbase database as long as the database comes back online within three days. You may want to implement a process to automatically reconcile the Pocketbase database with Stripe in case of a prolonged outage.
+### Configure Customer Portal
 
-## Inspiration and Possible Front End
+1. Set branding in [Stripe Settings](https://dashboard.stripe.com/settings/branding)
+2. Configure [Customer Portal](https://dashboard.stripe.com/test/settings/billing/portal):
+   - Enable "Allow customers to update payment methods"
+   - Enable "Allow customers to update/cancel subscriptions"
+   - Add your products and prices
 
-This template is based on https://github.com/vercel/nextjs-subscription-payments/tree/main you could take the front end supplied there and adapt it to use PocketBase as a backend. Give it a try and submit a PR to this doc and I will add you as a contributor
+### Production Webhooks
 
-## Note On The Docker Container
+For production, create a webhook endpoint in [Stripe Dashboard](https://dashboard.stripe.com/webhooks):
 
-I have added a docker container that is not production ready but you can probably get running in google cloud run quite easily or whatever your preference is for hosting. Please note:
+```bash
+task stripe:webhook:prod  # Shows setup instructions
+```
 
-- You need to setup a mounted volume for the DB otherwise it will run in memory
-- You need to setup your user collection permissions
-- You need to deploy with run arguements
+Endpoint URL: `https://YOUR_DOMAIN/stripe`
 
-Here is my current build flow to upgrade and deploy the container to Google Artifact
+Events to listen for:
+- `product.*`, `price.*`
+- `customer.*`, `customer.subscription.*`
+- `checkout.session.completed`
 
-### Update Packages
+## Going Live
 
-`go get -u github.com/pocketbase/pocketbase`
+1. Archive all test mode products in Stripe
+2. Switch Stripe to production mode
+3. Update `.env` with production API keys
+4. Create production webhook endpoint
+5. Rebuild and deploy
 
-### Build Binary
+## Architecture
 
-`GOOS=linux GOARCH=amd64 go build -o bin/app-amd64-linux main.go`
+```
+├── main.go              # PocketBase app with Stripe hooks
+├── hooks/               # JSVM hooks (JavaScript)
+├── pb_bootstrap/        # PocketBase schema
+├── stripe_bootstrap/    # Stripe fixtures
+├── Taskfile.yml         # Task runner config
+├── taskfiles/           # Modular task definitions
+├── process-compose.yml  # Multi-service runner
+└── Dockerfile           # Container build
+```
 
-### Build Image
+## Reliability
 
-`do build -t myimage . --build-1. arg STRIPE_SECRET_KEY=sk_test_WHATEVER_YOUR_KEY_IS --build-1. arg HOST=api.sign365.com.au --build-1. arg  STRRETURN_URL=https://sign365.com.au/account --build-1. arg PORT=8090 --build-1. arg DEVELOPMENT="" --platform linux/amd64`
+Stripe webhooks are retried for up to 3 days if the database is unavailable. Transactions will eventually sync when the database comes back online.
 
-### Tag Image
+## Credits
 
-`docker tag myimage australia-southeast1-docker.pkg.dev/biz365-1569752078001/fastpocket/myimage:latest`
-
-### Push Image
-
-`docker push australia-southeast1-docker.pkg.dev/biz365-1569752078001/fastpocket/myimage`
-
-I really hope this helps in building a fresh image.
+- Based on [vercel/nextjs-subscription-payments](https://github.com/vercel/nextjs-subscription-payments)
+- Original author: [Samuel Wyndham](https://twitter.com/meinbiz)
+- Fork maintainer: [joeblew999](https://github.com/joeblew999)
 
 ## Sponsors
 
 - [XAM Consulting](https://xam.com.au/)
 
-## Contributors
-
-- [Samuel Wyndham](https://twitter.com/meinbiz)
-- [Suan Choi](https://github.com/suanTech)
-
-## Issues
-This repo is downstream from FastPocket. If you are experiencing issues I recommend that you update the packages in `main.go` and then compile the binary. This fixes most of the issues I have had with stripe
-
 ## License
 
-MIT License
-
-Copyright (c) 2024 BIZ365 PTY LTD
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+MIT License - See [LICENSE](LICENSE) for details.

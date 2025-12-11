@@ -45,6 +45,22 @@ tasks:
       - rm -rf pb_data
       - 'echo "✓ Cleaned. Run: task dev && task pb:1-superuser"'
 
+  # === Source Reference ===
+  src:clone:
+    desc: Clone PocketBase source for reference (helps with future upgrades)
+    cmds:
+      - mkdir -p .src
+      - git clone --depth 1 --branch {{.PB_VERSION}} https://github.com/pocketbase/pocketbase.git .src/pocketbase
+    status:
+      - test -d .src/pocketbase
+
+  src:update:
+    desc: Update PocketBase source to specific version
+    dir: .src/pocketbase
+    cmds:
+      - git fetch --tags
+      - git checkout {{.PB_VERSION}}
+
   # === Gitignore ===
   gitignore:
     desc: Output gitignore patterns for PocketBase

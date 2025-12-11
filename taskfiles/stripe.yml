@@ -143,6 +143,21 @@ tasks:
       - rm -f .env
       - 'echo "✓ Cleaned. Run setup steps again starting with: task stripe:1-install"'
 
+  # === Info ===
+  info:
+    desc: Show Stripe configuration status
+    silent: true
+    cmds:
+      - |
+        echo "Stripe Secrets:"
+        [ -n "${STRIPE_SECRET_KEY}" ] && echo "  ✓ STRIPE_SECRET_KEY" || echo "  ✗ STRIPE_SECRET_KEY"
+        [ -n "${STRIPE_WHSEC}" ] && echo "  ✓ STRIPE_WHSEC" || echo "  ✗ STRIPE_WHSEC"
+        echo ""
+        echo "Stripe URLs:"
+        echo "  SUCCESS: ${STRIPE_SUCCESS_URL:-[NOT SET]}"
+        echo "  CANCEL:  ${STRIPE_CANCEL_URL:-[NOT SET]}"
+        echo "  BILLING: ${STRIPE_BILLING_RETURN_URL:-[NOT SET]}"
+
   # === Gitignore ===
   gitignore:
     desc: Output gitignore patterns for Stripe

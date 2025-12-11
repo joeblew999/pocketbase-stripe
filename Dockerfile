@@ -44,5 +44,5 @@ EXPOSE ${PB_PORT}
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:${PB_PORT}/api/health || exit 1
 
-# Run PocketBase
-CMD ["/app/pocketbase-stripe", "serve", "--http", "0.0.0.0:8090"]
+# Run PocketBase (uses PB_HOST and PB_PORT env vars)
+CMD /app/pocketbase-stripe serve --http "${PB_HOST}:${PB_PORT}"
