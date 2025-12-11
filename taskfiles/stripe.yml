@@ -16,6 +16,22 @@ vars:
   # STRIPE_WHSEC - Webhook signing secret (whsec_xxx)
 
 tasks:
+  # === Debug ===
+  debug:
+    desc: Print all Stripe vars
+    silent: true
+    cmds:
+      - |
+        echo "STRIPE_URL_DASHBOARD:     {{.STRIPE_URL_DASHBOARD}}"
+        echo "STRIPE_URL_API_KEYS:      {{.STRIPE_URL_API_KEYS}}"
+        echo "STRIPE_URL_WEBHOOKS:      {{.STRIPE_URL_WEBHOOKS}}"
+        echo "STRIPE_URL_PRODUCTS:      {{.STRIPE_URL_PRODUCTS}}"
+        echo "STRIPE_URL_CLI_DOCS:      {{.STRIPE_URL_CLI_DOCS}}"
+        echo "STRIPE_URL_LOCAL_WEBHOOK: {{.STRIPE_URL_LOCAL_WEBHOOK}}"
+        echo "STRIPE_VERSION_CLI:       {{.STRIPE_VERSION_CLI}}"
+        echo "STRIPE_SECRET_KEY:        ${STRIPE_SECRET_KEY:+[SET]}"
+        echo "STRIPE_WHSEC:             ${STRIPE_WHSEC:+[SET]}"
+
   # === Stripe Setup (numbered for order) ===
   1-install:
     desc: Install Stripe CLI
@@ -41,85 +57,40 @@ tasks:
     desc: Create .env file and add STRIPE_SECRET_KEY
     cmds:
       - |
-        echo ""
-        echo "=== CREATE .ENV FILE ==="
-        echo ""
         if [ -f .env ]; then
           echo ".env already exists"
-          echo ""
-          echo "Current contents:"
-          echo "---"
-          cat .env
-          echo "---"
         else
           cp .env.example .env
           echo "✓ Created .env from .env.example"
         fi
         echo ""
-        echo "=== ACTION REQUIRED ==="
-        echo ""
-        echo "1. Open: {{.STRIPE_URL_API_KEYS}}"
+        echo "ACTION: Get your API key from {{.STRIPE_URL_API_KEYS}}"
         open "{{.STRIPE_URL_API_KEYS}}" 2>/dev/null || true
-        echo "2. Copy your Secret key (starts with sk_test_)"
-        echo "3. Edit .env and set STRIPE_SECRET_KEY"
-        echo ""
-        echo "Then run: task stripe:4-fixtures"
-        echo ""
+        echo "  1. Copy your Secret key (sk_test_...)"
+        echo "  2. Edit .env and set STRIPE_SECRET_KEY"
+        echo "  3. Run: task stripe:4-fixtures"
 
   4-fixtures:
     desc: Load test products into Stripe
     cmds:
-      - |
-        echo ""
-        echo "=== LOAD TEST PRODUCTS ==="
-        echo ""
-        echo "This will create test products in your Stripe account:"
-        echo "  - Hobby ($10/month, $100/year)"
-        echo "  - Freelancer ($20/month, $200/year)"
-        echo ""
+      - echo "Loading test products (Hobby + Freelancer plans)..."
       - stripe fixtures stripe_bootstrap/stripe-fixtures.json
-      - |
-        echo ""
-        echo "✓ Products created!"
-        echo ""
-        echo "View at: {{.STRIPE_URL_PRODUCTS}}"
-        echo ""
-        echo "Next run: task stripe:5-listen"
-        echo ""
+      - 'echo "✓ Done! View at {{.STRIPE_URL_PRODUCTS}}"'
 
   5-listen:
     desc: Forward webhooks to local server (shows webhook secret on start)
     cmds:
       - |
-        echo ""
-        echo "=== START WEBHOOK LISTENER ==="
-        echo ""
-        echo "The webhook signing secret (whsec_xxx) will be shown below."
-        echo "Copy it to .env as STRIPE_WHSEC"
-        echo ""
-        echo "Keep this running! Open a new terminal for 'task dev'."
-        echo ""
+        echo "Starting webhook listener -> {{.STRIPE_URL_LOCAL_WEBHOOK}}"
+        echo "Copy the whsec_xxx secret to .env as STRIPE_WHSEC"
       - stripe listen --forward-to {{.STRIPE_URL_LOCAL_WEBHOOK}}
 
   6-test:
     desc: Test webhook integration
     cmds:
-      - |
-        echo ""
-        echo "=== TEST WEBHOOKS ==="
-        echo ""
-        echo "Make sure stripe:5-listen and dev are running!"
-        echo ""
-        echo "Sending test product.created event..."
-        echo ""
+      - echo "Triggering test event..."
       - stripe trigger product.created
-      - |
-        echo ""
-        echo "Check stripe:5-listen terminal for webhook events"
-        echo "Check dev terminal for app logs"
-        echo ""
-        echo "✓ Setup complete!"
-        echo ""
+      - 'echo "✓ Check your stripe:5-listen terminal for the event"'
 
   # === Webhook Modes ===
   listen:live:
@@ -128,31 +99,19 @@ tasks:
       - stripe listen --forward-to {{.STRIPE_URL_LOCAL_WEBHOOK}} --live
 
   webhook:prod:
-    desc: Open Stripe Dashboard to configure production webhook
+    desc: Show production webhook setup instructions
+    silent: true
     cmds:
       - |
-        echo ""
-        echo "=== PRODUCTION WEBHOOK SETUP ==="
-        echo ""
-        echo "1. Open: {{.STRIPE_URL_WEBHOOKS}}"
+        echo "Production Webhook Setup"
+        echo "========================"
+        echo "1. Go to: {{.STRIPE_URL_WEBHOOKS}}"
+        echo "2. Add endpoint: https://YOUR_DOMAIN/stripe"
+        echo "3. Select events: product.*, price.*, customer.*, customer.subscription.*, checkout.session.completed"
+        echo "4. Copy signing secret to production .env as STRIPE_WHSEC"
         open "{{.STRIPE_URL_WEBHOOKS}}" 2>/dev/null || true
-        echo ""
-        echo "2. Click 'Add endpoint'"
-        echo ""
-        echo "3. Configure:"
-        echo "   Endpoint URL: https://YOUR_DOMAIN/stripe"
-        echo "   Events to send:"
-        echo "     - product.created, product.updated, product.deleted"
-        echo "     - price.created, price.updated, price.deleted"
-        echo "     - customer.created, customer.updated, customer.deleted"
-        echo "     - customer.subscription.created, customer.subscription.updated, customer.subscription.deleted"
-        echo "     - checkout.session.completed"
-        echo ""
-        echo "4. Copy the signing secret (whsec_xxx) to your production .env"
-        echo ""
 
   # === Test Events ===
-
   test:price:
     desc: Trigger a test price.created event
     cmds:
@@ -180,25 +139,9 @@ tasks:
   clean:
     desc: Clean up Stripe CLI auth and local .env for fresh setup
     cmds:
-      - |
-        echo ""
-        echo "=== CLEANING STRIPE SETUP ==="
-        echo ""
-        echo "Logging out of Stripe CLI..."
-        stripe logout 2>/dev/null || true
-        echo ""
-        echo "Removing .env file..."
-        rm -f .env
-        echo ""
-        echo "✓ Cleaned! You can now run the setup steps again:"
-        echo ""
-        echo "  task stripe:1-install"
-        echo "  task stripe:2-login"
-        echo "  task stripe:3-env"
-        echo "  task stripe:4-fixtures"
-        echo "  task stripe:5-listen"
-        echo "  task stripe:6-test"
-        echo ""
+      - stripe logout 2>/dev/null || true
+      - rm -f .env
+      - 'echo "✓ Cleaned. Run setup steps again starting with: task stripe:1-install"'
 
   # === Gitignore ===
   gitignore:

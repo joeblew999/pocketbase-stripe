@@ -10,6 +10,16 @@ vars:
     sh: git remote get-url origin 2>/dev/null | sed 's|.*github.com[:/]||' | sed 's|\.git$||' | sed 's|.*/||' || echo "pocketbase-stripe"
 
 tasks:
+  # === Debug ===
+  debug:
+    desc: Print all Docker vars
+    silent: true
+    cmds:
+      - |
+        echo "DOCKER_IMAGE_NAME:     {{.DOCKER_IMAGE_NAME}}"
+        echo "DOCKER_IMAGE_TAG:      {{.DOCKER_IMAGE_TAG}}"
+        echo "DOCKER_CONTAINER_NAME: {{.DOCKER_CONTAINER_NAME}}"
+
   # === Docker Daemon ===
   ensure-running:
     desc: Ensure Docker daemon is running (starts OrbStack on macOS if needed)
@@ -19,11 +29,9 @@ tasks:
         if docker info >/dev/null 2>&1; then
           exit 0
         fi
-        # Try to start OrbStack on macOS
         if [ "$(uname)" = "Darwin" ] && command -v orb >/dev/null 2>&1; then
           echo "Starting OrbStack..."
           open -a OrbStack
-          # Wait for Docker to be ready (up to 30 seconds)
           for i in $(seq 1 30); do
             if docker info >/dev/null 2>&1; then
               echo "✓ Docker is ready"
@@ -34,8 +42,7 @@ tasks:
           echo "Error: Docker did not start in time"
           exit 1
         fi
-        echo "Error: Docker daemon is not running"
-        echo "Please start Docker Desktop or OrbStack"
+        echo "Error: Docker daemon is not running. Start Docker Desktop or OrbStack"
         exit 1
 
   # === Build ===
@@ -43,97 +50,50 @@ tasks:
     desc: Build Docker image
     deps: [ensure-running]
     cmds:
-      - |
-        echo ""
-        echo "=== BUILDING DOCKER IMAGE ==="
-        echo ""
-        echo "Image: {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}}"
-        echo ""
+      - echo "Building {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}}..."
       - docker build --load -t {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}} .
-      - |
-        echo ""
-        echo "✓ Build complete!"
-        echo ""
-        echo "Run: task docker:run"
-        echo ""
+      - 'echo "✓ Done. Run: task docker:run"'
 
   build:amd64:
     desc: Build Docker image for linux/amd64
     deps: [ensure-running]
     cmds:
-      - |
-        echo ""
-        echo "=== BUILDING FOR AMD64 ==="
-        echo ""
+      - echo "Building for amd64..."
       - docker build --platform linux/amd64 -t {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}}-amd64 .
-      - |
-        echo ""
-        echo "✓ AMD64 build complete!"
-        echo ""
 
   build:arm64:
     desc: Build Docker image for linux/arm64
     deps: [ensure-running]
     cmds:
-      - |
-        echo ""
-        echo "=== BUILDING FOR ARM64 ==="
-        echo ""
+      - echo "Building for arm64..."
       - docker build --platform linux/arm64 -t {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}}-arm64 .
-      - |
-        echo ""
-        echo "✓ ARM64 build complete!"
-        echo ""
 
   build:all:
     desc: Build Docker images for both amd64 and arm64
     deps: [ensure-running]
     cmds:
-      - |
-        echo ""
-        echo "=== BUILDING MULTI-ARCH ==="
-        echo ""
+      - echo "Building multi-arch..."
       - docker buildx build --platform linux/amd64,linux/arm64 -t {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}} .
-      - |
-        echo ""
-        echo "✓ Multi-arch build complete!"
-        echo ""
 
   # === Run ===
   run:
     desc: Run Docker container (uses .env file)
     deps: [ensure-running]
     cmds:
-      - |
-        echo ""
-        echo "=== STARTING CONTAINER ==="
-        echo ""
       - docker run --rm -it --name {{.DOCKER_CONTAINER_NAME}} --env-file .env -p ${PB_PORT:-8090}:8090 {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}}
 
   run:detached:
     desc: Run Docker container in background
     deps: [ensure-running]
     cmds:
-      - |
-        echo ""
-        echo "=== STARTING CONTAINER (DETACHED) ==="
-        echo ""
       - docker run -d --name {{.DOCKER_CONTAINER_NAME}} --env-file .env -p ${PB_PORT:-8090}:8090 {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}}
-      - |
-        echo ""
-        echo "✓ Container started!"
-        echo ""
-        echo "View logs: task docker:logs"
-        echo "Stop:      task docker:stop"
-        echo ""
+      - 'echo "✓ Started. Logs: task docker:logs | Stop: task docker:stop"'
 
   # === Management ===
   stop:
     desc: Stop running container
     cmds:
       - docker stop {{.DOCKER_CONTAINER_NAME}} 2>/dev/null || true
-      - |
-        echo "✓ Container stopped"
 
   logs:
     desc: View container logs
@@ -149,43 +109,23 @@ tasks:
   clean:
     desc: Remove container and image
     cmds:
-      - |
-        echo ""
-        echo "=== CLEANING UP ==="
-        echo ""
       - docker stop {{.DOCKER_CONTAINER_NAME}} 2>/dev/null || true
       - docker rm {{.DOCKER_CONTAINER_NAME}} 2>/dev/null || true
       - docker rmi {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}} 2>/dev/null || true
-      - |
-        echo ""
-        echo "✓ Cleaned up!"
-        echo ""
+      - echo "✓ Cleaned"
 
   # === Info ===
   info:
     desc: Show Docker image and container status
+    silent: true
     cmds:
       - |
-        echo ""
-        echo "=== DOCKER STATUS ==="
-        echo ""
         echo "Image: {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}}"
         IMG=$(docker images {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}} --format '{{ "{{" }}.Repository{{ "}}" }}:{{ "{{" }}.Tag{{ "}}" }} ({{ "{{" }}.Size{{ "}}" }})' 2>/dev/null)
-        if [ -n "$IMG" ]; then
-          echo "  $IMG"
-        else
-          echo "  (not built)"
-        fi
-        echo ""
+        if [ -n "$IMG" ]; then echo "  $IMG"; else echo "  (not built)"; fi
         echo "Container: {{.DOCKER_CONTAINER_NAME}}"
         CTR=$(docker ps -a --filter name=^{{.DOCKER_CONTAINER_NAME}}$ --format '{{ "{{" }}.Names{{ "}}" }}: {{ "{{" }}.Status{{ "}}" }}' 2>/dev/null)
-        if [ -n "$CTR" ]; then
-          echo "  $CTR"
-        else
-          echo "  (not running)"
-        fi
-        echo ""
-    silent: true
+        if [ -n "$CTR" ]; then echo "  $CTR"; else echo "  (not running)"; fi
 
   # === Gitignore ===
   gitignore:

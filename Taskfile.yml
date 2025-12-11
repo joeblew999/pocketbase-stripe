@@ -23,6 +23,20 @@ includes:
   docker: taskfiles/docker.yml
 
 tasks:
+  # === Debug ===
+  debug:
+    desc: Print all main Taskfile vars
+    silent: true
+    cmds:
+      - |
+        echo "BINARY:             {{.BINARY}}"
+        echo "PB_HOST:            {{.PB_HOST}}"
+        echo "PB_PORT:            {{.PB_PORT}}"
+        echo "PB_URL_LOCAL:       {{.PB_URL_LOCAL}}"
+        echo "PB_URL_LOCAL_ADMIN: {{.PB_URL_LOCAL_ADMIN}}"
+        echo "STRIPE_SECRET_KEY:  ${STRIPE_SECRET_KEY:+[SET]}"
+        echo "STRIPE_WHSEC:       ${STRIPE_WHSEC:+[SET]}"
+
   # === Quick Reference ===
   urls:
     desc: Show all important URLs for setup

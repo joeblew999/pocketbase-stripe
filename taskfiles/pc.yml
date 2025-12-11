@@ -5,6 +5,14 @@ vars:
   PC_VERSION: v1.34.0
 
 tasks:
+  # === Debug ===
+  debug:
+    desc: Print all process-compose vars
+    silent: true
+    cmds:
+      - |
+        echo "PC_VERSION: {{.PC_VERSION}}"
+
   install:
     desc: Install process-compose via go install
     env:
