@@ -34,27 +34,17 @@ tasks:
         echo "PB_PORT:            {{.PB_PORT}}"
         echo "PB_URL_LOCAL:       {{.PB_URL_LOCAL}}"
         echo "PB_URL_LOCAL_ADMIN: {{.PB_URL_LOCAL_ADMIN}}"
-        echo "STRIPE_SECRET_KEY:  ${STRIPE_SECRET_KEY:+[SET]}"
-        echo "STRIPE_WHSEC:       ${STRIPE_WHSEC:+[SET]}"
 
   # === Quick Reference ===
   urls:
     desc: Show all important URLs for setup
+    silent: true
     cmds:
-      - |
-        echo ""
-        echo "=== IMPORTANT URLS ==="
-        echo ""
-        echo "STRIPE:"
-        echo "  Dashboard:     https://dashboard.stripe.com"
-        echo "  API Keys:      https://dashboard.stripe.com/test/apikeys"
-        echo "  Webhooks:      https://dashboard.stripe.com/test/webhooks"
-        echo "  Products:      https://dashboard.stripe.com/test/products"
-        echo ""
-        echo "POCKETBASE:"
-        echo "  Docs:          https://pocketbase.io/docs"
-        echo "  Admin Panel:   {{.PB_URL_LOCAL_ADMIN}}"
-        echo ""
+      - echo "=== STRIPE ==="
+      - task stripe:urls
+      - echo ""
+      - echo "=== POCKETBASE ==="
+      - task pb:urls
 
   # === Main Menu ===
   default:

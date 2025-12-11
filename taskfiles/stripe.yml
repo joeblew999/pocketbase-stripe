@@ -143,6 +143,17 @@ tasks:
       - rm -f .env
       - 'echo "✓ Cleaned. Run setup steps again starting with: task stripe:1-install"'
 
+  # === URLs ===
+  urls:
+    desc: Show Stripe dashboard URLs
+    silent: true
+    cmds:
+      - |
+        echo "Dashboard: {{.STRIPE_URL_DASHBOARD}}"
+        echo "API Keys:  {{.STRIPE_URL_API_KEYS}}"
+        echo "Webhooks:  {{.STRIPE_URL_WEBHOOKS}}"
+        echo "Products:  {{.STRIPE_URL_PRODUCTS}}"
+
   # === Info ===
   info:
     desc: Show Stripe configuration status

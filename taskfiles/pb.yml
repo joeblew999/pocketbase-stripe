@@ -19,6 +19,15 @@ tasks:
         echo "PB_URL_ADMIN: {{.PB_URL_ADMIN}}"
         echo "PB_VERSION:   {{.PB_VERSION}}"
 
+  # === URLs ===
+  urls:
+    desc: Show PocketBase URLs
+    silent: true
+    cmds:
+      - |
+        echo "Docs:  {{.PB_URL_DOCS}}"
+        echo "Admin: {{.PB_URL_ADMIN}}"
+
   # === PocketBase Setup (numbered for order) ===
   1-superuser:
     desc: Create PocketBase superuser (admin account)

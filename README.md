@@ -22,8 +22,8 @@ The all-in-one starter kit for high-performance SaaS applications. Frontend-agno
 ### Setup
 
 ```bash
-# Clone and enter the repo
-git clone https://github.com/joeblew999/pocketbase-stripe.git
+# Clone and enter the repo ( or your fork )
+git clone https://github.com/mrwyndham/pocketbase-stripe
 cd pocketbase-stripe
 
 # One-time Stripe setup
