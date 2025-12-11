@@ -5,8 +5,9 @@ vars:
   DOCKER_IMAGE_NAME:
     sh: git remote get-url origin 2>/dev/null | sed 's|.*github.com[:/]||' | sed 's|\.git$||' || echo "pocketbase-stripe"
   DOCKER_IMAGE_TAG: latest
-  # Container
-  DOCKER_CONTAINER_NAME: pocketbase-stripe
+  # Container (uses repo name from git remote for fork compatibility)
+  DOCKER_CONTAINER_NAME:
+    sh: git remote get-url origin 2>/dev/null | sed 's|.*github.com[:/]||' | sed 's|\.git$||' | sed 's|.*/||' || echo "pocketbase-stripe"
 
 tasks:
   # === Docker Daemon ===
