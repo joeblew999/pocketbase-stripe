@@ -19,6 +19,7 @@ tasks:
   # === Debug ===
   debug:
     desc: Print all Stripe vars
+    internal: true
     silent: true
     cmds:
       - |
@@ -146,6 +147,7 @@ tasks:
   # === URLs ===
   urls:
     desc: Show Stripe dashboard URLs
+    internal: true
     silent: true
     cmds:
       - |
@@ -157,6 +159,7 @@ tasks:
   # === Info ===
   info:
     desc: Show Stripe configuration status
+    internal: true
     silent: true
     cmds:
       - |
@@ -172,6 +175,7 @@ tasks:
   # === Gitignore ===
   gitignore:
     desc: Output gitignore patterns for Stripe
+    internal: true
     silent: true
     cmds:
       - |
