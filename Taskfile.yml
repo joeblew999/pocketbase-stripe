@@ -19,7 +19,11 @@ tasks:
     cmds:
       - task --list
 
-  # === Quick Reference ===
+  # =============================================================================
+  # AGGREGATION TASKS - These call into sub-taskfiles (stripe, pb, pc, docker)
+  # =============================================================================
+
+  # === Quick Reference (aggregates stripe:urls + pb:urls) ===
   urls:
     desc: Show all important URLs for setup
     silent: true
@@ -30,7 +34,7 @@ tasks:
       - echo "=== POCKETBASE ==="
       - task pb:urls
 
-  # === Debug ===
+  # === Debug (aggregates pb:debug + stripe:debug) ===
   debug:
     desc: Print all vars from all taskfiles
     silent: true
@@ -41,7 +45,7 @@ tasks:
       - echo "=== STRIPE ==="
       - task stripe:debug
 
-  # === Info ===
+  # === Info (aggregates pb:info + stripe:info) ===
   info:
     desc: Show current configuration status
     silent: true
@@ -52,7 +56,7 @@ tasks:
       - echo ""
       - task stripe:info
 
-  # === Gitignore ===
+  # === Gitignore (aggregates stripe:gitignore + pb:gitignore) ===
   gitignore:
     desc: Generate .gitignore from all taskfile patterns
     cmds:
