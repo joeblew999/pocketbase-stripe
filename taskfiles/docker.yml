@@ -1,8 +1,8 @@
 version: '3'
 
 vars:
-  # Docker image
-  DOCKER_IMAGE_NAME: pocketbase-stripe
+  # Docker image (uses GitHub namespace)
+  DOCKER_IMAGE_NAME: joeblew999/pocketbase-stripe
   DOCKER_IMAGE_TAG: latest
   # Container
   DOCKER_CONTAINER_NAME: pocketbase-stripe
@@ -167,11 +167,21 @@ tasks:
         echo ""
         echo "=== DOCKER STATUS ==="
         echo ""
-        echo "Image:"
-        docker images {{.DOCKER_IMAGE_NAME}} --format "  {{.Repository}}:{{.Tag}} ({{.Size}})" 2>/dev/null || echo "  (not built)"
+        echo "Image: {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}}"
+        IMG=$(docker images {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}} --format '{{ "{{" }}.Repository{{ "}}" }}:{{ "{{" }}.Tag{{ "}}" }} ({{ "{{" }}.Size{{ "}}" }})' 2>/dev/null)
+        if [ -n "$IMG" ]; then
+          echo "  $IMG"
+        else
+          echo "  (not built)"
+        fi
         echo ""
-        echo "Container:"
-        docker ps -a --filter name={{.DOCKER_CONTAINER_NAME}} --format "  {{.Names}}: {{.Status}}" 2>/dev/null || echo "  (not running)"
+        echo "Container: {{.DOCKER_CONTAINER_NAME}}"
+        CTR=$(docker ps -a --filter name=^{{.DOCKER_CONTAINER_NAME}}$ --format '{{ "{{" }}.Names{{ "}}" }}: {{ "{{" }}.Status{{ "}}" }}' 2>/dev/null)
+        if [ -n "$CTR" ]; then
+          echo "  $CTR"
+        else
+          echo "  (not running)"
+        fi
         echo ""
     silent: true
 

@@ -51,6 +51,8 @@ tasks:
   # === Development ===
   dev:
     desc: Run in development mode
+    env:
+      GOWORK: "off"
     cmds:
       - |
         echo ""
@@ -61,6 +63,8 @@ tasks:
 
   deps:
     desc: Update Go dependencies
+    env:
+      GOWORK: "off"
     cmds:
       - go mod tidy
 
@@ -72,12 +76,15 @@ tasks:
   # === Build ===
   build:
     desc: Build the application for current platform
+    env:
+      GOWORK: "off"
     cmds:
       - go build -o {{.BINARY}} main.go
 
   build:linux:
     desc: Build for Linux amd64 (deployment)
     env:
+      GOWORK: "off"
       GOOS: linux
       GOARCH: amd64
     cmds:
@@ -86,6 +93,7 @@ tasks:
   build:darwin:
     desc: Build for macOS (arm64)
     env:
+      GOWORK: "off"
       GOOS: darwin
       GOARCH: arm64
     cmds:
@@ -94,6 +102,7 @@ tasks:
   build:windows:
     desc: Build for Windows amd64
     env:
+      GOWORK: "off"
       GOOS: windows
       GOARCH: amd64
     cmds:

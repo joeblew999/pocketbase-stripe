@@ -19,6 +19,8 @@ tasks:
   # === Stripe Setup (numbered for order) ===
   1-install:
     desc: Install Stripe CLI
+    env:
+      GOWORK: "off"
     status:
       - command -v stripe
     cmds:

@@ -12,6 +12,8 @@ tasks:
   # === PocketBase Setup (numbered for order) ===
   1-superuser:
     desc: Create PocketBase superuser (admin account)
+    env:
+      GOWORK: "off"
     cmds:
       - |
         echo ""
