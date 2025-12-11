@@ -1,12 +1,18 @@
 version: '3'
 
 vars:
+  # Server config (can be overridden via .env)
+  PB_HOST: '{{.PB_HOST | default "0.0.0.0"}}'
+  PB_PORT: '{{.PB_PORT | default "8090"}}'
+  # Derived URLs
+  PB_URL_LOCAL: 'http://localhost:{{.PB_PORT}}'
+  PB_URL_LOCAL_ADMIN: 'http://localhost:{{.PB_PORT}}/_/'
   # URLs - Docs
   PB_URL_DOCS: https://pocketbase.io/docs
-  # URLs - Local (uses PB_PORT from .env or defaults to 8090)
-  PB_URL_ADMIN: 'http://localhost:${PB_PORT:-8090}/_/'
   # Versions
   PB_VERSION: v0.34.2
+  # Binary
+  BINARY: bin/pocketbase-stripe
 
 tasks:
   # === Debug ===
@@ -15,9 +21,13 @@ tasks:
     silent: true
     cmds:
       - |
-        echo "PB_URL_DOCS:  {{.PB_URL_DOCS}}"
-        echo "PB_URL_ADMIN: {{.PB_URL_ADMIN}}"
-        echo "PB_VERSION:   {{.PB_VERSION}}"
+        echo "PB_HOST:            {{.PB_HOST}}"
+        echo "PB_PORT:            {{.PB_PORT}}"
+        echo "PB_URL_LOCAL:       {{.PB_URL_LOCAL}}"
+        echo "PB_URL_LOCAL_ADMIN: {{.PB_URL_LOCAL_ADMIN}}"
+        echo "PB_URL_DOCS:        {{.PB_URL_DOCS}}"
+        echo "PB_VERSION:         {{.PB_VERSION}}"
+        echo "BINARY:             {{.BINARY}}"
 
   # === URLs ===
   urls:
@@ -26,7 +36,63 @@ tasks:
     cmds:
       - |
         echo "Docs:  {{.PB_URL_DOCS}}"
-        echo "Admin: {{.PB_URL_ADMIN}}"
+        echo "Admin: {{.PB_URL_LOCAL_ADMIN}}"
+
+  # === Development ===
+  dev:
+    desc: Run in development mode
+    env:
+      GOWORK: "off"
+    cmds:
+      - echo "Starting PocketBase on {{.PB_URL_LOCAL}} (Admin {{.PB_URL_LOCAL_ADMIN}})"
+      - go run main.go serve --http "{{.PB_HOST}}:{{.PB_PORT}}"
+
+  deps:
+    desc: Update Go dependencies
+    env:
+      GOWORK: "off"
+    cmds:
+      - go mod tidy
+
+  serve:
+    desc: Serve the built binary
+    cmds:
+      - ./{{.BINARY}} serve --http "{{.PB_HOST}}:{{.PB_PORT}}"
+
+  # === Build ===
+  build:
+    desc: Build the application for current platform
+    env:
+      GOWORK: "off"
+    cmds:
+      - go build -o {{.BINARY}} main.go
+
+  build:linux:
+    desc: Build for Linux amd64 (deployment)
+    env:
+      GOWORK: "off"
+      GOOS: linux
+      GOARCH: amd64
+    cmds:
+      - go build -o {{.BINARY}}-linux-amd64 main.go
+
+  build:darwin:
+    desc: Build for macOS (arm64)
+    env:
+      GOWORK: "off"
+      GOOS: darwin
+      GOARCH: arm64
+    cmds:
+      - go build -o {{.BINARY}}-darwin-arm64 main.go
+
+  build:windows:
+    desc: Build for Windows amd64
+    env:
+      GOWORK: "off"
+      GOOS: windows
+      GOARCH: amd64
+    cmds:
+      - go build -o {{.BINARY}}-windows-amd64.exe main.go
 
   # === PocketBase Setup (numbered for order) ===
   1-superuser:
@@ -36,23 +102,23 @@ tasks:
     cmds:
       - 'echo "Creating superuser: admin@example.com / password123"'
       - go run main.go superuser create admin@example.com password123
-      - 'echo "✓ Done! Login at {{.PB_URL_ADMIN}}"'
+      - 'echo "✓ Done! Login at {{.PB_URL_LOCAL_ADMIN}}"'
 
   2-schema:
     desc: Import collections schema for Stripe integration
     cmds:
       - |
         echo "Import schema from PocketBase Admin:"
-        echo "  1. Open {{.PB_URL_ADMIN}}"
+        echo "  1. Open {{.PB_URL_LOCAL_ADMIN}}"
         echo "  2. Settings > Import collections"
         echo "  3. Load: pb_bootstrap/pb_schema.json"
-        open "{{.PB_URL_ADMIN}}" 2>/dev/null || true
+        open "{{.PB_URL_LOCAL_ADMIN}}" 2>/dev/null || true
 
   clean:
     desc: Delete PocketBase data for fresh start
     cmds:
       - rm -rf pb_data
-      - 'echo "✓ Cleaned. Run: task dev && task pb:1-superuser"'
+      - 'echo "✓ Cleaned. Run: task pb:dev && task pb:1-superuser"'
 
   # === Source Reference ===
   src:clone:
@@ -70,6 +136,16 @@ tasks:
       - git fetch --tags
       - git checkout {{.PB_VERSION}}
 
+  # === Info ===
+  info:
+    desc: Show PocketBase configuration status
+    silent: true
+    cmds:
+      - |
+        echo "Binary: {{.BINARY}}"
+        echo "Server: {{.PB_URL_LOCAL}} ({{.PB_HOST}}:{{.PB_PORT}})"
+        echo "Admin:  {{.PB_URL_LOCAL_ADMIN}}"
+
   # === Gitignore ===
   gitignore:
     desc: Output gitignore patterns for PocketBase
@@ -79,3 +155,6 @@ tasks:
         echo "# PocketBase"
         echo "pb_data/"
         echo ".src/"
+        echo ""
+        echo "# Build artifacts"
+        echo "bin/"
