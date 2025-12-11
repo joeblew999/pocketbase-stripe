@@ -55,12 +55,3 @@ tasks:
     desc: Attach to process-compose TUI (after running up:detached)
     cmds:
       - process-compose attach
-
-  # === Gitignore ===
-  gitignore:
-    desc: Output gitignore patterns for process-compose
-    silent: true
-    cmds:
-      - |
-        echo "# Process Compose"
-        echo "# (no patterns needed)"

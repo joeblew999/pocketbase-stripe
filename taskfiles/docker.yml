@@ -126,12 +126,3 @@ tasks:
         echo "Container: {{.DOCKER_CONTAINER_NAME}}"
         CTR=$(docker ps -a --filter name=^{{.DOCKER_CONTAINER_NAME}}$ --format '{{ "{{" }}.Names{{ "}}" }}: {{ "{{" }}.Status{{ "}}" }}' 2>/dev/null)
         if [ -n "$CTR" ]; then echo "  $CTR"; else echo "  (not running)"; fi
-
-  # === Gitignore ===
-  gitignore:
-    desc: Output gitignore patterns for Docker
-    silent: true
-    cmds:
-      - |
-        echo "# Docker"
-        echo "# (no patterns needed - Dockerfile is committed)"
