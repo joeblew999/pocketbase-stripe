@@ -9,5 +9,3 @@ MUST ensure that all taskfiles have a debug command that prints the vars.
 MUST ensure that taskfiles are DRY. Each taskfile is responsible for only its stuff.
 
 MUST ensure taskfile VARS and .env, process-compose.yml, DEVELOPMENT.md and Dockerfile stay in Sync. Task file vars are the source of truth.
-
-MUST use internal: true for tasks that are only called by aggregation tasks (debug, urls, info, gitignore).

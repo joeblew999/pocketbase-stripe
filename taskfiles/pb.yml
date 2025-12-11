@@ -18,7 +18,6 @@ tasks:
   # === Debug ===
   debug:
     desc: Print all PocketBase vars
-    internal: true
     silent: true
     cmds:
       - |
@@ -33,7 +32,6 @@ tasks:
   # === URLs ===
   urls:
     desc: Show PocketBase URLs
-    internal: true
     silent: true
     cmds:
       - |
@@ -128,7 +126,6 @@ tasks:
   # === Info ===
   info:
     desc: Show PocketBase configuration status
-    internal: true
     silent: true
     cmds:
       - |
@@ -139,7 +136,6 @@ tasks:
   # === Gitignore ===
   gitignore:
     desc: Output gitignore patterns for PocketBase
-    internal: true
     silent: true
     cmds:
       - |
