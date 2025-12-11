@@ -23,17 +23,6 @@ tasks:
   # AGGREGATION TASKS - These call into sub-taskfiles (stripe, pb, pc, docker)
   # =============================================================================
 
-  # === Quick Reference (aggregates stripe:urls + pb:urls) ===
-  urls:
-    desc: Show all important URLs for setup
-    silent: true
-    cmds:
-      - echo "=== STRIPE ==="
-      - task stripe:urls
-      - echo ""
-      - echo "=== POCKETBASE ==="
-      - task pb:urls
-
   # === Debug (aggregates pb:debug + stripe:debug) ===
   debug:
     desc: Print all vars from all taskfiles

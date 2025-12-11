@@ -29,15 +29,6 @@ tasks:
         echo "PB_VERSION:         {{.PB_VERSION}}"
         echo "BINARY:             {{.BINARY}}"
 
-  # === URLs ===
-  urls:
-    desc: Show PocketBase URLs
-    silent: true
-    cmds:
-      - |
-        echo "Docs:  {{.PB_URL_DOCS}}"
-        echo "Admin: {{.PB_URL_LOCAL_ADMIN}}"
-
   # === Dependencies ===
   deps:
     desc: Update Go dependencies
