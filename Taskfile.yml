@@ -4,6 +4,8 @@ dotenv: ['.env']
 
 ## For https://github.com/mrwyndham/pocketbase-stripe/issues/9#issuecomment-3639945631
 
+## joeblew999 fork: https://github.com/joeblew999/pocketbase-stripe
+
 vars:
   # Paths
   BINARY: bin/pocketbase-stripe
