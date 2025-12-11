@@ -1,0 +1,185 @@
+version: '3'
+
+vars:
+  # Docker image
+  DOCKER_IMAGE_NAME: pocketbase-stripe
+  DOCKER_IMAGE_TAG: latest
+  # Container
+  DOCKER_CONTAINER_NAME: pocketbase-stripe
+
+tasks:
+  # === Docker Daemon ===
+  ensure-running:
+    desc: Ensure Docker daemon is running (starts OrbStack on macOS if needed)
+    silent: true
+    cmds:
+      - |
+        if docker info >/dev/null 2>&1; then
+          exit 0
+        fi
+        # Try to start OrbStack on macOS
+        if [ "$(uname)" = "Darwin" ] && command -v orb >/dev/null 2>&1; then
+          echo "Starting OrbStack..."
+          open -a OrbStack
+          # Wait for Docker to be ready (up to 30 seconds)
+          for i in $(seq 1 30); do
+            if docker info >/dev/null 2>&1; then
+              echo "✓ Docker is ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Error: Docker did not start in time"
+          exit 1
+        fi
+        echo "Error: Docker daemon is not running"
+        echo "Please start Docker Desktop or OrbStack"
+        exit 1
+
+  # === Build ===
+  build:
+    desc: Build Docker image
+    deps: [ensure-running]
+    cmds:
+      - |
+        echo ""
+        echo "=== BUILDING DOCKER IMAGE ==="
+        echo ""
+        echo "Image: {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}}"
+        echo ""
+      - docker build -t {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}} .
+      - |
+        echo ""
+        echo "✓ Build complete!"
+        echo ""
+        echo "Run: task docker:run"
+        echo ""
+
+  build:amd64:
+    desc: Build Docker image for linux/amd64
+    deps: [ensure-running]
+    cmds:
+      - |
+        echo ""
+        echo "=== BUILDING FOR AMD64 ==="
+        echo ""
+      - docker build --platform linux/amd64 -t {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}}-amd64 .
+      - |
+        echo ""
+        echo "✓ AMD64 build complete!"
+        echo ""
+
+  build:arm64:
+    desc: Build Docker image for linux/arm64
+    deps: [ensure-running]
+    cmds:
+      - |
+        echo ""
+        echo "=== BUILDING FOR ARM64 ==="
+        echo ""
+      - docker build --platform linux/arm64 -t {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}}-arm64 .
+      - |
+        echo ""
+        echo "✓ ARM64 build complete!"
+        echo ""
+
+  build:all:
+    desc: Build Docker images for both amd64 and arm64
+    deps: [ensure-running]
+    cmds:
+      - |
+        echo ""
+        echo "=== BUILDING MULTI-ARCH ==="
+        echo ""
+      - docker buildx build --platform linux/amd64,linux/arm64 -t {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}} .
+      - |
+        echo ""
+        echo "✓ Multi-arch build complete!"
+        echo ""
+
+  # === Run ===
+  run:
+    desc: Run Docker container (uses .env file)
+    deps: [ensure-running]
+    cmds:
+      - |
+        echo ""
+        echo "=== STARTING CONTAINER ==="
+        echo ""
+      - docker run --rm -it --name {{.DOCKER_CONTAINER_NAME}} --env-file .env -p ${PB_PORT:-8090}:8090 {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}}
+
+  run:detached:
+    desc: Run Docker container in background
+    deps: [ensure-running]
+    cmds:
+      - |
+        echo ""
+        echo "=== STARTING CONTAINER (DETACHED) ==="
+        echo ""
+      - docker run -d --name {{.DOCKER_CONTAINER_NAME}} --env-file .env -p ${PB_PORT:-8090}:8090 {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}}
+      - |
+        echo ""
+        echo "✓ Container started!"
+        echo ""
+        echo "View logs: task docker:logs"
+        echo "Stop:      task docker:stop"
+        echo ""
+
+  # === Management ===
+  stop:
+    desc: Stop running container
+    cmds:
+      - docker stop {{.DOCKER_CONTAINER_NAME}} 2>/dev/null || true
+      - |
+        echo "✓ Container stopped"
+
+  logs:
+    desc: View container logs
+    cmds:
+      - docker logs -f {{.DOCKER_CONTAINER_NAME}}
+
+  shell:
+    desc: Open shell in running container
+    cmds:
+      - docker exec -it {{.DOCKER_CONTAINER_NAME}} /bin/sh
+
+  # === Cleanup ===
+  clean:
+    desc: Remove container and image
+    cmds:
+      - |
+        echo ""
+        echo "=== CLEANING UP ==="
+        echo ""
+      - docker stop {{.DOCKER_CONTAINER_NAME}} 2>/dev/null || true
+      - docker rm {{.DOCKER_CONTAINER_NAME}} 2>/dev/null || true
+      - docker rmi {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}} 2>/dev/null || true
+      - |
+        echo ""
+        echo "✓ Cleaned up!"
+        echo ""
+
+  # === Info ===
+  info:
+    desc: Show Docker image and container status
+    cmds:
+      - |
+        echo ""
+        echo "=== DOCKER STATUS ==="
+        echo ""
+        echo "Image:"
+        docker images {{.DOCKER_IMAGE_NAME}} --format "  {{.Repository}}:{{.Tag}} ({{.Size}})" 2>/dev/null || echo "  (not built)"
+        echo ""
+        echo "Container:"
+        docker ps -a --filter name={{.DOCKER_CONTAINER_NAME}} --format "  {{.Names}}: {{.Status}}" 2>/dev/null || echo "  (not running)"
+        echo ""
+    silent: true
+
+  # === Gitignore ===
+  gitignore:
+    desc: Output gitignore patterns for Docker
+    silent: true
+    cmds:
+      - |
+        echo "# Docker"
+        echo "# (no patterns needed - Dockerfile is committed)"

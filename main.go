@@ -9,12 +9,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/labstack/echo/v5"
-
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/forms"
-	"github.com/pocketbase/pocketbase/models"
 	"github.com/pocketbase/pocketbase/plugins/jsvm"
 
 	"github.com/stripe/stripe-go/v76"
@@ -40,58 +36,55 @@ func int64ToISODate(timestamp int64) string {
 }
 
 func main() {
-	// Retreive stripe generated webhook secret
-	// SECRET_TXT, err := os.ReadFile("secret.txt")
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// WHSEC := strings.ReplaceAll(string(SECRET_TXT), "\n", "")
-	// log.Print(WHSEC)
 	app := pocketbase.New()
 
-	// Retreive your STRIPE_SECRET_KEY from environment variables
+	// Retrieve your STRIPE_SECRET_KEY from environment variables
 	stripe.Key = os.Getenv("STRIPE_SECRET_KEY")
 	stripeSuccessURL := os.Getenv("STRIPE_SUCCESS_URL")
 	stripeCancelURL := os.Getenv("STRIPE_CANCEL_URL")
 	stripeBillingReturnURL := os.Getenv("STRIPE_BILLING_RETURN_URL")
 	WHSEC := os.Getenv("STRIPE_WHSEC")
-	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
-		e.Router.GET("/goext/:name", func(c echo.Context) error {
-			name := c.PathParam("name")
 
-			return c.JSON(http.StatusOK, map[string]string{"message": "Hello " + name})
-		} /* optional middlewares */)
-
-		return nil
-	})
+	// Register JSVM plugin for JavaScript hooks
 	jsvm.MustRegister(app, jsvm.Config{
 		HooksWatch:    true,
 		HooksPoolSize: 25,
 	})
-	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
-		e.Router.POST("/create-checkout-session", func(c echo.Context) error {
+
+	// Register all routes in a single OnServe hook
+	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
+		// Simple test endpoint
+		se.Router.GET("/goext/{name}", func(e *core.RequestEvent) error {
+			name := e.Request.PathValue("name")
+			return e.JSON(http.StatusOK, map[string]string{"message": "Hello " + name})
+		})
+
+		// Create checkout session endpoint
+		se.Router.POST("/create-checkout-session", func(e *core.RequestEvent) error {
 			// 1. Destructure the price and quantity from the POST body
-			body := c.Request().Body
-			defer body.Close()
-			payload, _ := io.ReadAll(body)
+			payload, err := io.ReadAll(e.Request.Body)
+			if err != nil {
+				return e.JSON(http.StatusBadRequest, map[string]string{"failure": "Could not read request body"})
+			}
 			var data map[string]interface{}
-			json.Unmarshal([]byte(payload), &data)
+			if err := json.Unmarshal(payload, &data); err != nil {
+				return e.JSON(http.StatusBadRequest, map[string]string{"failure": "Could not parse request body"})
+			}
 
 			price, _ := data["price"].(map[string]interface{})
 			quantity, _ := data["quantity"].(float64)
 
 			// 2. Get the user from pocketbase auth
-			token := c.Request().Header.Get("Authorization")
-			record, err := app.Dao().FindAuthRecordByToken(token, app.Settings().RecordAuthToken.Secret)
-
+			token := e.Request.Header.Get("Authorization")
+			record, err := app.FindAuthRecordByToken(token, core.TokenTypeAuth)
 			if err != nil {
-				return c.JSON(http.StatusBadRequest, map[string]string{"failure": "Could not get user"})
+				return e.JSON(http.StatusBadRequest, map[string]string{"failure": "Could not get user"})
 			}
 
 			// 3. Retrieve or create the customer in Stripe
-			existingCustomerRecord, err := app.Dao().FindFirstRecordByData("customer", "user_id", record.Id)
+			existingCustomerRecord, err := app.FindFirstRecordByData("customer", "user_id", record.Id)
 			if err != nil {
-				//create new customer if none exists
+				// Create new customer if none exists
 				customerEmail := record.GetString("email")
 				customerParams := &stripe.CustomerParams{
 					Email: &customerEmail,
@@ -100,32 +93,27 @@ func main() {
 					},
 				}
 
-				stripeCustomer, _ := customer.New(customerParams)
+				stripeCustomer, err := customer.New(customerParams)
+				if err != nil {
+					return e.JSON(http.StatusBadRequest, map[string]string{"failure": "Could not create Stripe customer"})
+				}
 
-				//upload customer to pocketbase
-				collection, err := app.Dao().FindCollectionByNameOrId("customer")
+				// Upload customer to pocketbase
+				collection, err := app.FindCollectionByNameOrId("customer")
 				if err != nil {
 					return err
 				}
-				var form *forms.RecordUpsert
-				newCustomerRecord := models.NewRecord(collection)
 
-				if err == nil {
-					form = forms.NewRecordUpsert(app, newCustomerRecord)
+				newCustomerRecord := core.NewRecord(collection)
+				newCustomerRecord.Set("user_id", record.Id)
+				newCustomerRecord.Set("stripe_customer_id", stripeCustomer.ID)
+
+				if err := app.Save(newCustomerRecord); err != nil {
+					return e.JSON(http.StatusBadRequest, map[string]string{"failure": "Could not create new customer"})
 				}
 
-				form.LoadData(map[string]any{
-					"user_id":            record.Id,
-					"stripe_customer_id": stripeCustomer.ID,
-				})
-
-				if err := form.Submit(); err != nil {
-					return c.JSON(http.StatusBadRequest, map[string]string{"failure": "Could not create new customer"})
-				}
-
-				//Do Pricing New Customer
+				// Do Pricing New Customer
 				if price["type"] == "recurring" {
-					//create new session
 					lineParams := []*stripe.CheckoutSessionLineItemParams{
 						{
 							Price:    stripe.String(price["id"].(string)),
@@ -152,9 +140,8 @@ func main() {
 						SubscriptionData:         subscriptionParams,
 					}
 					sesh, _ := checkoutSession.New(sessionParams)
-					return c.JSON(http.StatusOK, sesh)
+					return e.JSON(http.StatusOK, sesh)
 				} else if price["type"] == "one_time" {
-					//create new session
 					lineParams := []*stripe.CheckoutSessionLineItemParams{
 						{
 							Price:    stripe.String(price["id"].(string)),
@@ -177,14 +164,13 @@ func main() {
 						LineItems:                lineParams,
 					}
 					sesh, _ := checkoutSession.New(sessionParams)
-					return c.JSON(http.StatusOK, sesh)
+					return e.JSON(http.StatusOK, sesh)
 				} else {
-					return c.JSON(http.StatusBadRequest, map[string]string{"failure": "Could not create new session"})
+					return e.JSON(http.StatusBadRequest, map[string]string{"failure": "Could not create new session"})
 				}
 			} else {
-				//Do Pricing Existing
+				// Do Pricing Existing Customer
 				if price["type"] == "recurring" {
-					//create new session
 					lineParams := []*stripe.CheckoutSessionLineItemParams{
 						{
 							Price:    stripe.String(price["id"].(string)),
@@ -211,9 +197,8 @@ func main() {
 						SubscriptionData:         subscriptionParams,
 					}
 					sesh, _ := checkoutSession.New(sessionParams)
-					return c.JSON(http.StatusOK, sesh)
+					return e.JSON(http.StatusOK, sesh)
 				} else if price["type"] == "one_time" {
-					//create new session
 					lineParams := []*stripe.CheckoutSessionLineItemParams{
 						{
 							Price:    stripe.String(price["id"].(string)),
@@ -236,105 +221,95 @@ func main() {
 						LineItems:                lineParams,
 					}
 					sesh, _ := checkoutSession.New(sessionParams)
-					return c.JSON(http.StatusOK, sesh)
+					return e.JSON(http.StatusOK, sesh)
 				} else {
-					return c.JSON(http.StatusBadRequest, map[string]string{"failure": "Could not create new session for stripe"})
+					return e.JSON(http.StatusBadRequest, map[string]string{"failure": "Could not create new session for stripe"})
 				}
 			}
 		})
-		return nil
-	})
-	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
-		e.Router.POST("/create-portal-link", func(c echo.Context) error {
+
+		// Create portal link endpoint
+		se.Router.POST("/create-portal-link", func(e *core.RequestEvent) error {
 			// 1. Get the user from pocketbase auth
-			token := c.Request().Header.Get("Authorization")
-			record, err := app.Dao().FindAuthRecordByToken(token, app.Settings().RecordAuthToken.Secret)
+			token := e.Request.Header.Get("Authorization")
+			record, err := app.FindAuthRecordByToken(token, core.TokenTypeAuth)
 			if err != nil {
-				return c.JSON(http.StatusBadRequest, map[string]string{"failure": "Could not get user"})
+				return e.JSON(http.StatusBadRequest, map[string]string{"failure": "Could not get user"})
 			}
 
 			// 2. Retrieve or create the customer in Stripe
-			existingCustomerRecord, err := app.Dao().FindFirstRecordByData("customer", "user_id", record.Id)
+			existingCustomerRecord, err := app.FindFirstRecordByData("customer", "user_id", record.Id)
 			if err != nil {
-				//create new customer if none exists
+				// Create new customer if none exists
 				customerParams := &stripe.CustomerParams{
 					Metadata: map[string]string{
 						"pocketbaseUUID": record.GetString("id"),
 					},
 				}
 
-				stripeCustomer, _ := customer.New(customerParams)
+				stripeCustomer, err := customer.New(customerParams)
+				if err != nil {
+					return e.JSON(http.StatusBadRequest, map[string]string{"failure": "Could not create Stripe customer"})
+				}
 
-				//upload customer to pocketbase
-				collection, err := app.Dao().FindCollectionByNameOrId("customer")
+				// Upload customer to pocketbase
+				collection, err := app.FindCollectionByNameOrId("customer")
 				if err != nil {
 					return err
 				}
-				var form *forms.RecordUpsert
-				newCustomerRecord := models.NewRecord(collection)
 
-				if err == nil {
-					form = forms.NewRecordUpsert(app, newCustomerRecord)
+				newCustomerRecord := core.NewRecord(collection)
+				newCustomerRecord.Set("user_id", record.Id)
+				newCustomerRecord.Set("stripe_customer_id", stripeCustomer.ID)
+
+				if err := app.Save(newCustomerRecord); err != nil {
+					return e.JSON(http.StatusBadRequest, map[string]string{"failure": "Could not create new customer"})
 				}
 
-				form.LoadData(map[string]any{
-					"user_id":            record.Id,
-					"stripe_customer_id": stripeCustomer.ID,
-				})
-
-				if err := form.Submit(); err != nil {
-					return c.JSON(http.StatusBadRequest, map[string]string{"failure": "Could not create new customer"})
-				}
-
-				//create new session
+				// Create new session
 				sessionParams := &stripe.BillingPortalSessionParams{
 					Customer:  stripe.String(stripeCustomer.ID),
 					ReturnURL: &stripeBillingReturnURL,
 				}
 				sesh, err := session.New(sessionParams)
 				if err != nil {
-					return c.JSON(http.StatusBadRequest, map[string]string{"failure": "Could not create new session"})
-				} else {
-					return c.JSON(http.StatusOK, sesh)
+					return e.JSON(http.StatusBadRequest, map[string]string{"failure": "Could not create new session"})
 				}
-
+				return e.JSON(http.StatusOK, sesh)
 			} else {
-				//create new session
+				// Create new session for existing customer
 				sessionParams := &stripe.BillingPortalSessionParams{
 					Customer:  stripe.String(existingCustomerRecord.GetString("stripe_customer_id")),
 					ReturnURL: &stripeBillingReturnURL,
 				}
 				sesh, err := session.New(sessionParams)
 				if err != nil {
-					return c.JSON(http.StatusBadRequest, map[string]string{"failure": "Could not create new session"})
-				} else {
-					return c.JSON(http.StatusOK, sesh)
+					return e.JSON(http.StatusBadRequest, map[string]string{"failure": "Could not create new session"})
 				}
+				return e.JSON(http.StatusOK, sesh)
 			}
 		})
-		return nil
-	})
-	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
-		e.Router.POST("/stripe", func(c echo.Context) error {
+
+		// Stripe webhook endpoint
+		se.Router.POST("/stripe", func(e *core.RequestEvent) error {
 			// Read the request body into a byte slice
-			body := c.Request().Body
-			defer body.Close() // Close the body when done
-			payload, err := io.ReadAll(body)
+			payload, err := io.ReadAll(e.Request.Body)
 			if err != nil {
-				return c.JSON(http.StatusBadRequest, map[string]string{"failure": "failed to read body"})
+				return e.JSON(http.StatusBadRequest, map[string]string{"failure": "failed to read body"})
 			}
 
 			event := stripe.Event{}
 			err = json.Unmarshal(payload, &event)
 			if err != nil {
-				return c.JSON(http.StatusBadRequest, map[string]string{"failure": "failed to parse JSON"})
+				return e.JSON(http.StatusBadRequest, map[string]string{"failure": "failed to parse JSON"})
 			}
-			signatureHeader := c.Request().Header.Get("Stripe-Signature")
+
+			signatureHeader := e.Request.Header.Get("Stripe-Signature")
 			event, err = webhook.ConstructEvent(payload, signatureHeader, WHSEC)
 			if err != nil {
 				failureMessage := fmt.Sprintf("webhook verification failed: payload=%q, signatureHeader=%q, err=%q",
 					payload, signatureHeader, err)
-				return c.JSON(http.StatusBadRequest, map[string]string{"failure": failureMessage})
+				return e.JSON(http.StatusBadRequest, map[string]string{"failure": failureMessage})
 			}
 
 			switch event.Type {
@@ -342,248 +317,210 @@ func main() {
 				var product stripe.Product
 				err := json.Unmarshal(event.Data.Raw, &product)
 				if err != nil {
-					return c.JSON(http.StatusBadRequest, map[string]string{"failure": "failed to marshall the stripe event"})
+					return e.JSON(http.StatusBadRequest, map[string]string{"failure": "failed to marshall the stripe event"})
 				}
-				// Then define and call a func to handle the successful payment intent.
 
-				collection, err := app.Dao().FindCollectionByNameOrId("product")
+				collection, err := app.FindCollectionByNameOrId("product")
 				if err != nil {
 					return err
 				}
 
-				existingRecord, err := app.Dao().FindFirstRecordByData("product", "product_id", product.ID)
-				record := models.NewRecord(collection)
-
-				var form *forms.RecordUpsert
+				existingRecord, err := app.FindFirstRecordByData("product", "product_id", product.ID)
+				var recordToSave *core.Record
 
 				if err == nil && existingRecord != nil {
 					// Existing record found, update it
-					// You might need to map data from product to your record
-					// Assuming UpdateRecord updates the existing record with new data
-					form = forms.NewRecordUpsert(app, existingRecord)
+					recordToSave = existingRecord
 				} else {
 					// Existing record not found, insert a new record
-					// You might need to map data from product to your record
-					// Assuming InsertRecord inserts a new record
-					form = forms.NewRecordUpsert(app, record)
+					recordToSave = core.NewRecord(collection)
 				}
 
-				form.LoadData(map[string]any{
-					"product_id":  product.ID,
-					"active":      product.Active,
-					"name":        product.Name,
-					"description": coalesce(&product.Description, ""),
-					"metadata":    product.Metadata,
-				})
+				recordToSave.Set("product_id", product.ID)
+				recordToSave.Set("active", product.Active)
+				recordToSave.Set("name", product.Name)
+				recordToSave.Set("description", coalesce(&product.Description, ""))
+				recordToSave.Set("metadata", product.Metadata)
 
-				// validate and submit (internally it calls app.Dao().SaveRecord(record) in a transaction)
-				if err := form.Submit(); err != nil {
+				if err := app.Save(recordToSave); err != nil {
 					return err
 				}
+
 			case "price.created", "price.updated":
 				var price stripe.Price
 				err := json.Unmarshal(event.Data.Raw, &price)
 				if err != nil {
-					return c.JSON(http.StatusBadRequest, map[string]string{"failure": "failed to marshall the stripe event"})
+					return e.JSON(http.StatusBadRequest, map[string]string{"failure": "failed to marshall the stripe event"})
 				}
-				// Then define and call a func to handle the successful payment intent.
 
-				collection, err := app.Dao().FindCollectionByNameOrId("price")
+				collection, err := app.FindCollectionByNameOrId("price")
 				if err != nil {
 					return err
 				}
 
-				existingRecord, err := app.Dao().FindFirstRecordByData("product", "price_id", price.ID)
-				record := models.NewRecord(collection)
-
-				var form *forms.RecordUpsert
+				existingRecord, err := app.FindFirstRecordByData("price", "price_id", price.ID)
+				var recordToSave *core.Record
 
 				if err == nil && existingRecord != nil {
 					// Existing record found, update it
-					// You might need to map data from product to your record
-					// Assuming UpdateRecord updates the existing record with new data
-					form = forms.NewRecordUpsert(app, existingRecord)
+					recordToSave = existingRecord
 				} else {
 					// Existing record not found, insert a new record
-					// You might need to map data from product to your record
-					// Assuming InsertRecord inserts a new record
-					form = forms.NewRecordUpsert(app, record)
+					recordToSave = core.NewRecord(collection)
 				}
 
-				data := map[string]any{
-					"price_id":    price.ID,
-					"product_id":  price.Product.ID,
-					"active":      price.Active,
-					"currency":    price.Currency,
-					"description": price.Nickname,
-					"type":        price.Type,
-					"unit_amount": price.UnitAmount,
-					"metadata":    price.Metadata,
-				}
+				recordToSave.Set("price_id", price.ID)
+				recordToSave.Set("product_id", price.Product.ID)
+				recordToSave.Set("active", price.Active)
+				recordToSave.Set("currency", price.Currency)
+				recordToSave.Set("description", price.Nickname)
+				recordToSave.Set("type", price.Type)
+				recordToSave.Set("unit_amount", price.UnitAmount)
+				recordToSave.Set("metadata", price.Metadata)
+
 				// Check if Recurring is not nil before accessing its fields
 				if price.Recurring != nil {
-					data["interval"] = price.Recurring.Interval
-					data["interval_count"] = price.Recurring.IntervalCount
-					data["trial_period_days"] = price.Recurring.TrialPeriodDays
+					recordToSave.Set("interval", price.Recurring.Interval)
+					recordToSave.Set("interval_count", price.Recurring.IntervalCount)
+					recordToSave.Set("trial_period_days", price.Recurring.TrialPeriodDays)
 				}
 
-				form.LoadData(data)
-
-				// validate and submit (internally it calls app.Dao().SaveRecord(record) in a transaction)
-				if err := form.Submit(); err != nil {
-					return c.JSON(http.StatusBadRequest, map[string]string{"failure": "failed to submit to pocketbase"})
+				if err := app.Save(recordToSave); err != nil {
+					return e.JSON(http.StatusBadRequest, map[string]string{"failure": "failed to submit to pocketbase"})
 				}
+
 			case "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted":
 				var subscription stripe.Subscription
 				err := json.Unmarshal(event.Data.Raw, &subscription)
 				if err != nil {
-					return c.JSON(http.StatusBadRequest, map[string]string{"failure": "failed to marshall the stripe event"})
+					return e.JSON(http.StatusBadRequest, map[string]string{"failure": "failed to marshall the stripe event"})
 				}
-				//Get customer's UUID from mapping table in order to update users billing address and payment method
-				existingCustomer, err := app.Dao().FindFirstRecordByData("customer", "stripe_customer_id", subscription.Customer.ID)
+
+				// Get customer's UUID from mapping table
+				existingCustomer, err := app.FindFirstRecordByData("customer", "stripe_customer_id", subscription.Customer.ID)
 				if err != nil {
-					return c.JSON(http.StatusBadRequest, map[string]string{"failure": "no customer"})
+					return e.JSON(http.StatusBadRequest, map[string]string{"failure": "no customer"})
 				}
 
-				var uuid = existingCustomer.GetString("user_id")
-				collection, err := app.Dao().FindCollectionByNameOrId("subscription")
+				uuid := existingCustomer.GetString("user_id")
+				collection, err := app.FindCollectionByNameOrId("subscription")
 				if err != nil {
-					return c.JSON(http.StatusBadRequest, map[string]string{"failure": "collection doesn't exist"})
+					return e.JSON(http.StatusBadRequest, map[string]string{"failure": "collection doesn't exist"})
 				}
 
-				//Update Subscription Details
-				existingRecord, err := app.Dao().FindFirstRecordByData("subscription", "subscription_id", subscription.ID)
-				record := models.NewRecord(collection)
-
-				var form *forms.RecordUpsert
+				// Update Subscription Details
+				existingRecord, err := app.FindFirstRecordByData("subscription", "subscription_id", subscription.ID)
+				var recordToSave *core.Record
 
 				if err == nil && existingRecord != nil {
-					// Existing record found, update it
-					// You might need to map data from product to your record
-					// Assuming UpdateRecord updates the existing record with new data
-					form = forms.NewRecordUpsert(app, existingRecord)
+					recordToSave = existingRecord
 				} else {
-					// Existing record not found, insert a new record
-					// You might need to map data from product to your record
-					// Assuming InsertRecord inserts a new record
-					form = forms.NewRecordUpsert(app, record)
+					recordToSave = core.NewRecord(collection)
 				}
 
-				form.LoadData(map[string]any{
-					"subscription_id":      subscription.ID,
-					"user_id":              uuid,
-					"metadata":             subscription.Metadata,
-					"status":               subscription.Status,
-					"price_id":             subscription.Items.Data[0].Price.ID,
-					"quantity":             subscription.Items.Data[0].Quantity,
-					"cancel_at_period_end": subscription.CancelAtPeriodEnd,
-					"cancel_at":            int64ToISODate(subscription.CancelAt),
-					"canceled_at":          int64ToISODate(subscription.CanceledAt),
-					"current_period_start": int64ToISODate(subscription.CurrentPeriodStart),
-					"current_period_end":   int64ToISODate(subscription.CurrentPeriodEnd),
-					"created":              int64ToISODate(subscription.Items.Data[0].Created),
-					"ended_at":             int64ToISODate(subscription.EndedAt),
-					"trial_start":          int64ToISODate(subscription.TrialStart),
-					"trial_end":            int64ToISODate(subscription.TrialEnd),
-				})
-				if err := form.Submit(); err != nil {
-					return c.JSON(http.StatusBadRequest, map[string]string{"failure": "couldn't submit subscription update"})
+				recordToSave.Set("subscription_id", subscription.ID)
+				recordToSave.Set("user_id", uuid)
+				recordToSave.Set("metadata", subscription.Metadata)
+				recordToSave.Set("status", subscription.Status)
+				recordToSave.Set("price_id", subscription.Items.Data[0].Price.ID)
+				recordToSave.Set("quantity", subscription.Items.Data[0].Quantity)
+				recordToSave.Set("cancel_at_period_end", subscription.CancelAtPeriodEnd)
+				recordToSave.Set("cancel_at", int64ToISODate(subscription.CancelAt))
+				recordToSave.Set("canceled_at", int64ToISODate(subscription.CanceledAt))
+				recordToSave.Set("current_period_start", int64ToISODate(subscription.CurrentPeriodStart))
+				recordToSave.Set("current_period_end", int64ToISODate(subscription.CurrentPeriodEnd))
+				recordToSave.Set("created", int64ToISODate(subscription.Items.Data[0].Created))
+				recordToSave.Set("ended_at", int64ToISODate(subscription.EndedAt))
+				recordToSave.Set("trial_start", int64ToISODate(subscription.TrialStart))
+				recordToSave.Set("trial_end", int64ToISODate(subscription.TrialEnd))
+
+				if err := app.Save(recordToSave); err != nil {
+					return e.JSON(http.StatusBadRequest, map[string]string{"failure": "couldn't submit subscription update"})
 				}
 
-				//Update User Details If Subscription Created
+				// Update User Details If Subscription Created
 				if event.Type == "customer.subscription.created" {
-					existingUserRecord, _ := app.Dao().FindFirstRecordByData("user", "id", uuid)
-					var userForm = forms.NewRecordUpsert(app, existingUserRecord)
+					existingUserRecord, err := app.FindFirstRecordByData("users", "id", uuid)
+					if err == nil && existingUserRecord != nil {
+						existingUserRecord.Set("billing_address", subscription.DefaultPaymentMethod.Customer.Address)
+						existingUserRecord.Set("payment_method", subscription.DefaultPaymentMethod.Type)
 
-					userForm.LoadData(map[string]any{
-						"billing_address": subscription.DefaultPaymentMethod.Customer.Address,
-						"payment_method":  subscription.DefaultPaymentMethod.Type,
-					})
-					// validate and submit (internally it calls app.Dao().SaveRecord(record) in a transaction)
-					if err := userForm.Submit(); err != nil {
-						return c.JSON(http.StatusBadRequest, map[string]string{"failure": "couldn't submit user update"})
+						if err := app.Save(existingUserRecord); err != nil {
+							return e.JSON(http.StatusBadRequest, map[string]string{"failure": "couldn't submit user update"})
+						}
 					}
 				}
+
 			case "checkout.session.completed":
-				var session stripe.CheckoutSession
-				err := json.Unmarshal(event.Data.Raw, &session)
+				var checkoutSesh stripe.CheckoutSession
+				err := json.Unmarshal(event.Data.Raw, &checkoutSesh)
 				if err != nil {
-					return c.JSON(http.StatusBadRequest, map[string]string{"failure": "failed to marshall the stripe event"})
+					return e.JSON(http.StatusBadRequest, map[string]string{"failure": "failed to marshall the stripe event"})
 				}
-				if session.Mode == "subscription" {
-					//Get customer's UUID from mapping table in order to update users billing address and payment method
-					existingCustomer, err := app.Dao().FindFirstRecordByData("customer", "stripe_customer_id", session.Subscription.Customer.ID)
+
+				if checkoutSesh.Mode == "subscription" {
+					// Get customer's UUID from mapping table
+					existingCustomer, err := app.FindFirstRecordByData("customer", "stripe_customer_id", checkoutSesh.Subscription.Customer.ID)
 					if err != nil {
-						return c.JSON(http.StatusBadRequest, map[string]string{"failure": "no customer"})
+						return e.JSON(http.StatusBadRequest, map[string]string{"failure": "no customer"})
 					}
 
-					var uuid = existingCustomer.GetString("user_id")
-					collection, err := app.Dao().FindCollectionByNameOrId("subscription")
+					uuid := existingCustomer.GetString("user_id")
+					collection, err := app.FindCollectionByNameOrId("subscription")
 					if err != nil {
-						return c.JSON(http.StatusBadRequest, map[string]string{"failure": "collection doesn't exist"})
+						return e.JSON(http.StatusBadRequest, map[string]string{"failure": "collection doesn't exist"})
 					}
 
-					//Update Subscription Details
-					existingRecord, err := app.Dao().FindFirstRecordByData("subscription", "subscription_id", session.Subscription.ID)
-					record := models.NewRecord(collection)
-
-					var form *forms.RecordUpsert
+					// Update Subscription Details
+					existingRecord, err := app.FindFirstRecordByData("subscription", "subscription_id", checkoutSesh.Subscription.ID)
+					var recordToSave *core.Record
 
 					if err == nil && existingRecord != nil {
-						// Existing record found, update it
-						// You might need to map data from product to your record
-						// Assuming UpdateRecord updates the existing record with new data
-						form = forms.NewRecordUpsert(app, existingRecord)
+						recordToSave = existingRecord
 					} else {
-						// Existing record not found, insert a new record
-						// You might need to map data from product to your record
-						// Assuming InsertRecord inserts a new record
-						form = forms.NewRecordUpsert(app, record)
+						recordToSave = core.NewRecord(collection)
 					}
 
-					form.LoadData(map[string]any{
-						"subscription_id":      session.Subscription.ID,
-						"user_id":              uuid,
-						"metadata":             session.Subscription.Metadata,
-						"status":               session.Subscription.Status,
-						"price_id":             session.Subscription.Items.Data[0].Price.ID,
-						"quantity":             session.Subscription.Items.Data[0].Quantity,
-						"cancel_at_period_end": session.Subscription.CancelAtPeriodEnd,
-						"cancel_at":            int64ToISODate(session.Subscription.CancelAt),
-						"canceled_at":          int64ToISODate(session.Subscription.CanceledAt),
-						"current_period_start": int64ToISODate(session.Subscription.CurrentPeriodStart),
-						"current_period_end":   int64ToISODate(session.Subscription.CurrentPeriodEnd),
-						"created":              int64ToISODate(session.Subscription.Items.Data[0].Created),
-						"ended_at":             int64ToISODate(session.Subscription.EndedAt),
-						"trial_start":          int64ToISODate(session.Subscription.TrialStart),
-						"trial_end":            int64ToISODate(session.Subscription.TrialEnd),
-					})
-					if err := form.Submit(); err != nil {
-						return c.JSON(http.StatusBadRequest, map[string]string{"failure": "couldn't submit subscription update"})
+					recordToSave.Set("subscription_id", checkoutSesh.Subscription.ID)
+					recordToSave.Set("user_id", uuid)
+					recordToSave.Set("metadata", checkoutSesh.Subscription.Metadata)
+					recordToSave.Set("status", checkoutSesh.Subscription.Status)
+					recordToSave.Set("price_id", checkoutSesh.Subscription.Items.Data[0].Price.ID)
+					recordToSave.Set("quantity", checkoutSesh.Subscription.Items.Data[0].Quantity)
+					recordToSave.Set("cancel_at_period_end", checkoutSesh.Subscription.CancelAtPeriodEnd)
+					recordToSave.Set("cancel_at", int64ToISODate(checkoutSesh.Subscription.CancelAt))
+					recordToSave.Set("canceled_at", int64ToISODate(checkoutSesh.Subscription.CanceledAt))
+					recordToSave.Set("current_period_start", int64ToISODate(checkoutSesh.Subscription.CurrentPeriodStart))
+					recordToSave.Set("current_period_end", int64ToISODate(checkoutSesh.Subscription.CurrentPeriodEnd))
+					recordToSave.Set("created", int64ToISODate(checkoutSesh.Subscription.Items.Data[0].Created))
+					recordToSave.Set("ended_at", int64ToISODate(checkoutSesh.Subscription.EndedAt))
+					recordToSave.Set("trial_start", int64ToISODate(checkoutSesh.Subscription.TrialStart))
+					recordToSave.Set("trial_end", int64ToISODate(checkoutSesh.Subscription.TrialEnd))
+
+					if err := app.Save(recordToSave); err != nil {
+						return e.JSON(http.StatusBadRequest, map[string]string{"failure": "couldn't submit subscription update"})
 					}
 
-					//Update User Details
-					existingUserRecord, _ := app.Dao().FindFirstRecordByData("user", "id", uuid)
-					var userForm = forms.NewRecordUpsert(app, existingUserRecord)
+					// Update User Details
+					existingUserRecord, err := app.FindFirstRecordByData("users", "id", uuid)
+					if err == nil && existingUserRecord != nil {
+						existingUserRecord.Set("billing_address", checkoutSesh.Subscription.DefaultPaymentMethod.Customer.Address)
+						existingUserRecord.Set("payment_method", checkoutSesh.Subscription.DefaultPaymentMethod.Type)
 
-					userForm.LoadData(map[string]any{
-						"billing_address": session.Subscription.DefaultPaymentMethod.Customer.Address,
-						"payment_method":  session.Subscription.DefaultPaymentMethod.Type,
-					})
-
-					// validate and submit (internally it calls app.Dao().SaveRecord(record) in a transaction)
-					if err := userForm.Submit(); err != nil {
-						return c.JSON(http.StatusBadRequest, map[string]string{"failure": "couldn't submit user update"})
+						if err := app.Save(existingUserRecord); err != nil {
+							return e.JSON(http.StatusBadRequest, map[string]string{"failure": "couldn't submit user update"})
+						}
 					}
 				}
+
 			default:
-				return c.JSON(http.StatusBadRequest, map[string]string{"failure": "didn't receive a valid event"})
+				return e.JSON(http.StatusBadRequest, map[string]string{"failure": "didn't receive a valid event"})
 			}
 
-			return c.JSON(http.StatusOK, map[string]interface{}{"success": "data was received"})
-		} /* optional middlewares */)
+			return e.JSON(http.StatusOK, map[string]interface{}{"success": "data was received"})
+		})
 
-		return nil
+		return se.Next()
 	})
 
 	if err := app.Start(); err != nil {

@@ -1,46 +1,58 @@
+# Multi-stage build for smaller production image
+FROM golang:1.24-alpine AS builder
 
-# Use the latest golang base image
-FROM golang:latest
+WORKDIR /build
 
+# Install build dependencies
+RUN apk add --no-cache git
 
-# Set the Current Working Directory inside the container
-WORKDIR /app
-ARG STRIPE_SECRET_KEY=""
-ARG STRIPE_CANCEL_URL=""
-ARG STRIPE_SUCCESS_URL=""
-ARG STRIPE_BILLING_RETURN_URL=""
-ARG STRIPE_WHSEC=""
-ARG HOST=""
-ARG PORT="443"
-ARG DEVELOPMENT=""
+# Copy go mod files first for better caching
+COPY go.mod go.sum ./
+RUN go mod download
 
-# Set Environment Variables
-ENV DEBIAN_FRONTEND=noninteractive
-ENV STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
-ENV STRIPE_CANCEL_URL=${STRIPE_CANCEL_URL}
-ENV STRIPE_SUCCESS_URL=${STRIPE_SUCCESS_URL}
-ENV STRIPE_BILLING_RETURN_URL=${STRIPE_BILLING_RETURN_URL}
-ENV STRIPE_WHSEC=${STRIPE_WHSEC}
-ENV HOST=${HOST}
-ENV PORT=${PORT}
-ENV DEVELOPMENT=${DEVELOPMENT}
-
-# Copy the source from the current directory to the Working Directory inside the container
+# Copy source code
 COPY . .
 
-# Build the Stripe Pipeline
-# RUN curl -s https://packages.stripe.dev/api/security/keypair/stripe-cli-gpg/public | gpg --dearmor | tee /usr/share/keyrings/stripe.gpg
-# RUN echo "deb [signed-by=/usr/share/keyrings/stripe.gpg] https://packages.stripe.dev/stripe-cli-debian-local stable main" | tee -a /etc/apt/sources.list.d/stripe.list
-# RUN apt-get update
-# RUN apt-get install stripe
+# Build the binary
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o pocketbase-stripe main.go
 
+# === Production image ===
+FROM alpine:latest
 
-# Copy the script to the container
-COPY ./script.sh /script.sh
+WORKDIR /app
 
-# Make the script executable
-RUN chmod +x /script.sh
+# Install ca-certificates for HTTPS
+RUN apk add --no-cache ca-certificates
 
-# Command to run the executable
-CMD ["/script.sh"]
+# Copy binary from builder
+COPY --from=builder /build/pocketbase-stripe /app/pocketbase-stripe
 
+# Copy hooks and bootstrap files
+COPY --from=builder /build/hooks /app/hooks
+COPY --from=builder /build/pb_bootstrap /app/pb_bootstrap
+COPY --from=builder /build/stripe_bootstrap /app/stripe_bootstrap
+
+# === Environment Variables ===
+# PocketBase server (same as Taskfile/process-compose)
+ENV PB_HOST=0.0.0.0
+ENV PB_PORT=8090
+
+# Stripe (set via docker run -e or .env file)
+ENV STRIPE_SECRET_KEY=""
+ENV STRIPE_WHSEC=""
+ENV STRIPE_SUCCESS_URL=""
+ENV STRIPE_CANCEL_URL=""
+ENV STRIPE_BILLING_RETURN_URL=""
+
+# Development mode
+ENV DEVELOPMENT=""
+
+# Expose the PocketBase port
+EXPOSE ${PB_PORT}
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:${PB_PORT}/api/health || exit 1
+
+# Run PocketBase
+CMD ["/app/pocketbase-stripe", "serve", "--http", "0.0.0.0:8090"]

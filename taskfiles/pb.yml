@@ -1,0 +1,83 @@
+version: '3'
+
+vars:
+  # URLs - Docs
+  PB_URL_DOCS: https://pocketbase.io/docs
+  # URLs - Local (uses PB_PORT from .env or defaults to 8090)
+  PB_URL_ADMIN: 'http://localhost:${PB_PORT:-8090}/_/'
+  # Versions
+  PB_VERSION: v0.34.2
+
+tasks:
+  # === PocketBase Setup (numbered for order) ===
+  1-superuser:
+    desc: Create PocketBase superuser (admin account)
+    cmds:
+      - |
+        echo ""
+        echo "=== CREATE SUPERUSER ==="
+        echo ""
+        echo "Creating superuser: admin@example.com / password123"
+        echo ""
+      - go run main.go superuser create admin@example.com password123
+      - |
+        echo ""
+        echo "✓ Superuser created!"
+        echo ""
+        echo "Login at: {{.PB_URL_ADMIN}}"
+        echo "  Email:    admin@example.com"
+        echo "  Password: password123"
+        echo ""
+        echo "Next run: task pb:2-schema"
+        echo ""
+
+  2-schema:
+    desc: Import collections schema for Stripe integration
+    cmds:
+      - |
+        echo ""
+        echo "=== IMPORT SCHEMA ==="
+        echo ""
+        echo "Opening PocketBase Admin..."
+        echo ""
+        echo "1. Open: {{.PB_URL_ADMIN}}"
+        open "{{.PB_URL_ADMIN}}" 2>/dev/null || true
+        echo ""
+        echo "2. Login with: admin@example.com / password123"
+        echo ""
+        echo "3. Import the schema:"
+        echo "   - Go to Settings (gear icon) > Import collections"
+        echo "   - Click 'Load from JSON file'"
+        echo "   - Select: pb_bootstrap/pb_schema.json"
+        echo "   - Click 'Review' then 'Confirm'"
+        echo ""
+        echo "This creates the collections needed for Stripe integration:"
+        echo "  - product, price, customer, subscription, user, organisation"
+        echo ""
+
+  clean:
+    desc: Delete PocketBase data for fresh start
+    cmds:
+      - |
+        echo ""
+        echo "=== CLEANING POCKETBASE DATA ==="
+        echo ""
+        echo "Removing pb_data folder..."
+        rm -rf pb_data
+        echo ""
+        echo "✓ Cleaned! Run these to set up again:"
+        echo ""
+        echo "  task dev           # Start PocketBase"
+        echo "  task pb:1-superuser # Create admin"
+        echo "  task pb:2-schema    # Import collections"
+        echo ""
+
+  # === Gitignore ===
+  gitignore:
+    desc: Output gitignore patterns for PocketBase
+    silent: true
+    cmds:
+      - |
+        echo "# PocketBase"
+        echo "pb_data/"
+        echo ".src/"

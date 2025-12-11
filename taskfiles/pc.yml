@@ -1,0 +1,56 @@
+version: '3'
+
+vars:
+  # Versions
+  PC_VERSION: v1.34.0
+
+tasks:
+  install:
+    desc: Install process-compose via go install
+    status:
+      - command -v process-compose
+    cmds:
+      - go install github.com/F1bonacc1/process-compose@{{.PC_VERSION}}
+
+  up:
+    desc: Start all services with process-compose (pocketbase + stripe listener)
+    env:
+      GOWORK: "off"
+    cmds:
+      - process-compose up
+
+  up:detached:
+    desc: Start process-compose in detached mode
+    env:
+      GOWORK: "off"
+    cmds:
+      - process-compose up -d --tui=false
+
+  down:
+    desc: Stop all process-compose services
+    cmds:
+      - process-compose down
+
+  restart:
+    desc: Restart all process-compose services
+    cmds:
+      - process-compose restart
+
+  logs:
+    desc: Show process-compose logs
+    cmds:
+      - process-compose logs
+
+  attach:
+    desc: Attach to process-compose TUI (after running up:detached)
+    cmds:
+      - process-compose attach
+
+  # === Gitignore ===
+  gitignore:
+    desc: Output gitignore patterns for process-compose
+    silent: true
+    cmds:
+      - |
+        echo "# Process Compose"
+        echo "# (no patterns needed)"

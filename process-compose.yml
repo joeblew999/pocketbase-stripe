@@ -1,0 +1,30 @@
+version: "0.5"
+
+# Load environment from .env file (for PB_HOST, PB_PORT, etc.)
+# See .env.example for available variables
+
+environment:
+  - "GOWORK=off"
+
+processes:
+  # PocketBase server
+  pocketbase:
+    command: go run main.go serve --http "${PB_HOST:-0.0.0.0}:${PB_PORT:-8090}"
+    availability:
+      restart: on_failure
+    readiness_probe:
+      http_get:
+        host: localhost
+        port: ${PB_PORT:-8090}
+        path: /api/health
+      initial_delay_seconds: 3
+      period_seconds: 5
+
+  # Stripe webhook listener
+  stripe-listen:
+    command: stripe listen --forward-to http://localhost:${PB_PORT:-8090}/stripe
+    availability:
+      restart: on_failure
+    depends_on:
+      pocketbase:
+        condition: process_healthy
