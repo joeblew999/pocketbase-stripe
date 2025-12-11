@@ -1,8 +1,9 @@
 version: '3'
 
 vars:
-  # Docker image (uses GitHub namespace)
-  DOCKER_IMAGE_NAME: joeblew999/pocketbase-stripe
+  # Docker image (derived from git remote for fork compatibility)
+  DOCKER_IMAGE_NAME:
+    sh: git remote get-url origin 2>/dev/null | sed 's|.*github.com[:/]||' | sed 's|\.git$||' || echo "pocketbase-stripe"
   DOCKER_IMAGE_TAG: latest
   # Container
   DOCKER_CONTAINER_NAME: pocketbase-stripe
