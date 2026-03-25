@@ -3,6 +3,10 @@ version: '3'
 vars:
   # Versions
   PC_VERSION: v1.34.0
+  # Log file (process-compose writes logs here)
+  PC_LOG_FILE: /tmp/process-compose.log
+  # Binary (cross-platform: adds .exe on Windows)
+  PC_BINARY: process-compose{{exeExt}}
 
 tasks:
   # === Debug ===
@@ -11,47 +15,52 @@ tasks:
     silent: true
     cmds:
       - |
-        echo "PC_VERSION: {{.PC_VERSION}}"
+        echo "PC_VERSION:  {{.PC_VERSION}}"
+        echo "PC_LOG_FILE: {{.PC_LOG_FILE}}"
+        echo "PC_BINARY:   {{.PC_BINARY}}"
 
-  install:
+  dep:
     desc: Install process-compose via go install
     env:
       GOWORK: "off"
     status:
-      - command -v process-compose
+      - '{{.PC_BINARY}} version'
     cmds:
-      - go install github.com/F1bonacc1/process-compose@{{.PC_VERSION}}
+      - go install github.com/F1bonacc1/process-compose/v2@{{.PC_VERSION}}
 
   up:
-    desc: Start all services with process-compose (pocketbase + stripe listener)
+    desc: Start all services with process-compose
     env:
       GOWORK: "off"
     cmds:
-      - process-compose up
+      - '{{.PC_BINARY}} up -t=false -L {{.PC_LOG_FILE}}'
 
-  up:detached:
+  up-detached:
     desc: Start process-compose in detached mode
     env:
       GOWORK: "off"
     cmds:
-      - process-compose up -d --tui=false
+      - '{{.PC_BINARY}} up -D -t=false -L {{.PC_LOG_FILE}}'
 
   down:
     desc: Stop all process-compose services
     cmds:
-      - process-compose down
+      - '{{.PC_BINARY}} down'
 
   restart:
-    desc: Restart all process-compose services
+    desc: Restart all process-compose services (down + up)
+    env:
+      GOWORK: "off"
     cmds:
-      - process-compose restart
+      - '{{.PC_BINARY}} down'
+      - '{{.PC_BINARY}} up -t=false -L {{.PC_LOG_FILE}}'
 
   logs:
-    desc: Show process-compose logs
+    desc: Tail the process-compose log file
     cmds:
-      - process-compose logs
+      - tail -f {{.PC_LOG_FILE}}
 
-  attach:
-    desc: Attach to process-compose TUI (after running up:detached)
+  list:
+    desc: List running processes
     cmds:
-      - process-compose attach
+      - '{{.PC_BINARY}} process list'

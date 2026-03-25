@@ -25,7 +25,7 @@ tasks:
 
   # === Debug (aggregates pb:debug + stripe:debug) ===
   debug:
-    desc: Print all vars from all taskfiles
+    desc: Print all vars and status from all taskfiles
     silent: true
     cmds:
       - echo "=== POCKETBASE ==="
@@ -34,18 +34,7 @@ tasks:
       - echo "=== STRIPE ==="
       - task stripe:debug
 
-  # === Info (aggregates pb:info + stripe:info) ===
-  info:
-    desc: Show current configuration status
-    silent: true
-    cmds:
-      - echo "=== CONFIGURATION STATUS ==="
-      - echo ""
-      - task pb:info
-      - echo ""
-      - task stripe:info
-
-  # === Gitignore (aggregates stripe:gitignore + pb:gitignore) ===
+  # === Gitignore ===
   gitignore:
     desc: Generate .gitignore from all taskfile patterns
     cmds:
@@ -62,12 +51,23 @@ tasks:
         echo ".DS_Store"
         echo "Thumbs.db"
         echo ""
-      - task stripe:gitignore
-      - echo ""
-      - task pb:gitignore
+        echo "# Stripe"
+        echo ".env"
+        echo ".env.local"
+        echo ".env.*.local"
+        echo ".stripe/"
+        echo "*.log"
+        echo "stripe.out"
+        echo ""
+        echo "# PocketBase"
+        echo "pb_data/"
+        echo ".src/"
+        echo ""
+        echo "# Build artifacts"
+        echo "bin/"
     silent: true
 
-  gitignore:write:
+  gitignore-write:
     desc: Write .gitignore file
     cmds:
       - task gitignore > .gitignore

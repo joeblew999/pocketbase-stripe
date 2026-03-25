@@ -12,13 +12,20 @@ vars:
 tasks:
   # === Debug ===
   debug:
-    desc: Print all Docker vars
+    desc: Print all Docker vars and status
     silent: true
     cmds:
       - |
         echo "DOCKER_IMAGE_NAME:     {{.DOCKER_IMAGE_NAME}}"
         echo "DOCKER_IMAGE_TAG:      {{.DOCKER_IMAGE_TAG}}"
         echo "DOCKER_CONTAINER_NAME: {{.DOCKER_CONTAINER_NAME}}"
+        echo ""
+        echo "Image: {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}}"
+        IMG=$(docker images {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}} --format '{{ "{{" }}.Repository{{ "}}" }}:{{ "{{" }}.Tag{{ "}}" }} ({{ "{{" }}.Size{{ "}}" }})' 2>/dev/null)
+        if [ -n "$IMG" ]; then echo "  $IMG"; else echo "  (not built)"; fi
+        echo "Container: {{.DOCKER_CONTAINER_NAME}}"
+        CTR=$(docker ps -a --filter name=^{{.DOCKER_CONTAINER_NAME}}$ --format '{{ "{{" }}.Names{{ "}}" }}: {{ "{{" }}.Status{{ "}}" }}' 2>/dev/null)
+        if [ -n "$CTR" ]; then echo "  $CTR"; else echo "  (not running)"; fi
 
   # === Docker Daemon ===
   ensure-running:
@@ -54,21 +61,21 @@ tasks:
       - docker build --load -t {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}} .
       - 'echo "✓ Done. Run: task docker:run"'
 
-  build:amd64:
+  build-amd64:
     desc: Build Docker image for linux/amd64
     deps: [ensure-running]
     cmds:
       - echo "Building for amd64..."
       - docker build --platform linux/amd64 -t {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}}-amd64 .
 
-  build:arm64:
+  build-arm64:
     desc: Build Docker image for linux/arm64
     deps: [ensure-running]
     cmds:
       - echo "Building for arm64..."
       - docker build --platform linux/arm64 -t {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}}-arm64 .
 
-  build:all:
+  build-all:
     desc: Build Docker images for both amd64 and arm64
     deps: [ensure-running]
     cmds:
@@ -82,7 +89,7 @@ tasks:
     cmds:
       - docker run --rm -it --name {{.DOCKER_CONTAINER_NAME}} --env-file .env -p ${PB_PORT:-8090}:8090 {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}}
 
-  run:detached:
+  run-detached:
     desc: Run Docker container in background
     deps: [ensure-running]
     cmds:
@@ -102,6 +109,7 @@ tasks:
 
   shell:
     desc: Open shell in running container
+    interactive: true
     cmds:
       - docker exec -it {{.DOCKER_CONTAINER_NAME}} /bin/sh
 
@@ -113,16 +121,3 @@ tasks:
       - docker rm {{.DOCKER_CONTAINER_NAME}} 2>/dev/null || true
       - docker rmi {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}} 2>/dev/null || true
       - echo "✓ Cleaned"
-
-  # === Info ===
-  info:
-    desc: Show Docker image and container status
-    silent: true
-    cmds:
-      - |
-        echo "Image: {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}}"
-        IMG=$(docker images {{.DOCKER_IMAGE_NAME}}:{{.DOCKER_IMAGE_TAG}} --format '{{ "{{" }}.Repository{{ "}}" }}:{{ "{{" }}.Tag{{ "}}" }} ({{ "{{" }}.Size{{ "}}" }})' 2>/dev/null)
-        if [ -n "$IMG" ]; then echo "  $IMG"; else echo "  (not built)"; fi
-        echo "Container: {{.DOCKER_CONTAINER_NAME}}"
-        CTR=$(docker ps -a --filter name=^{{.DOCKER_CONTAINER_NAME}}$ --format '{{ "{{" }}.Names{{ "}}" }}: {{ "{{" }}.Status{{ "}}" }}' 2>/dev/null)
-        if [ -n "$CTR" ]; then echo "  $CTR"; else echo "  (not running)"; fi

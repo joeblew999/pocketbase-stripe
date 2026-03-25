@@ -20,9 +20,9 @@ processes:
       initial_delay_seconds: 3
       period_seconds: 5
 
-  # Stripe webhook listener
+  # Stripe webhook listener (uses local config from .stripe/)
   stripe-listen:
-    command: stripe listen --forward-to http://localhost:${PB_PORT:-8090}/stripe
+    command: stripe --config .stripe/config.toml listen --forward-to http://localhost:${PB_PORT:-8090}/stripe
     availability:
       restart: on_failure
     depends_on:

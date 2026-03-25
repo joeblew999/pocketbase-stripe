@@ -11,6 +11,11 @@ vars:
   STRIPE_URL_LOCAL_WEBHOOK: 'http://localhost:${PB_PORT:-8090}/stripe'
   # Versions
   STRIPE_VERSION_CLI: v1.33.0
+  # Binary (cross-platform: adds .exe on Windows)
+  STRIPE_BINARY: stripe{{exeExt}}
+  # Local config (keeps Stripe CLI config in project, not ~/.config/stripe/)
+  STRIPE_CONFIG_DIR: .stripe
+  STRIPE_CONFIG: .stripe/config.toml
   # Secrets (loaded from .env via dotenv in main Taskfile)
   # STRIPE_SECRET_KEY - API secret key (sk_test_xxx or sk_live_xxx)
   # STRIPE_WHSEC - Webhook signing secret (whsec_xxx)
@@ -18,7 +23,7 @@ vars:
 tasks:
   # === Debug ===
   debug:
-    desc: Print all Stripe vars
+    desc: Print all Stripe vars and status
     silent: true
     cmds:
       - |
@@ -29,76 +34,153 @@ tasks:
         echo "STRIPE_URL_CLI_DOCS:      {{.STRIPE_URL_CLI_DOCS}}"
         echo "STRIPE_URL_LOCAL_WEBHOOK: {{.STRIPE_URL_LOCAL_WEBHOOK}}"
         echo "STRIPE_VERSION_CLI:       {{.STRIPE_VERSION_CLI}}"
-        echo "STRIPE_SECRET_KEY:        ${STRIPE_SECRET_KEY:+[SET]}"
-        echo "STRIPE_WHSEC:             ${STRIPE_WHSEC:+[SET]}"
+        echo "STRIPE_BINARY:            {{.STRIPE_BINARY}}"
+        echo "STRIPE_CONFIG_DIR:        {{.STRIPE_CONFIG_DIR}}"
+        echo "STRIPE_CONFIG:            {{.STRIPE_CONFIG}}"
+        echo ""
+        echo "Secrets:"
+        [ -n "${STRIPE_SECRET_KEY}" ] && echo "  ✓ STRIPE_SECRET_KEY" || echo "  ✗ STRIPE_SECRET_KEY"
+        [ -n "${STRIPE_WHSEC}" ] && echo "  ✓ STRIPE_WHSEC" || echo "  ✗ STRIPE_WHSEC"
+        echo ""
+        echo "Redirect URLs:"
+        echo "  SUCCESS: ${STRIPE_SUCCESS_URL:-[NOT SET]}"
+        echo "  CANCEL:  ${STRIPE_CANCEL_URL:-[NOT SET]}"
+        echo "  BILLING: ${STRIPE_BILLING_RETURN_URL:-[NOT SET]}"
 
-  # === Stripe Setup (numbered for order) ===
+  # === One-Command Setup ===
+  setup:
+    desc: Complete Stripe setup (install, login, env, fixtures) - run this first!
+    cmds:
+      - task: 1-install
+      - task: 2-login
+      - task: 3-env
+      - task: 4-fixtures
+      - |
+        echo ""
+        echo "════════════════════════════════════════════════════"
+        echo "✓ Stripe setup complete!"
+        echo ""
+        echo "To start development:"
+        echo "  task pc:up            # Starts PocketBase + Stripe listener"
+        echo ""
+        echo "Or run separately:"
+        echo "  task stripe:listen    # Forward webhooks (Terminal 1)"
+        echo "  task pb:build && ./bin/pocketbase-stripe serve  # (Terminal 2)"
+        echo ""
+        echo "Useful commands:"
+        echo "  task stripe:status    # Check configuration"
+        echo "  task stripe:test      # Trigger test webhook"
+        echo "  task stripe:open      # Open Stripe Dashboard"
+        echo "════════════════════════════════════════════════════"
+
+  # === Stripe Setup (internal - called by setup) ===
   1-install:
+    internal: true
     desc: Install Stripe CLI
     env:
       GOWORK: "off"
     status:
-      - command -v stripe
+      - '{{.STRIPE_BINARY}} --version'
     cmds:
+      - mkdir -p {{.STRIPE_CONFIG_DIR}}
       - go install github.com/stripe/stripe-cli/cmd/stripe@{{.STRIPE_VERSION_CLI}}
 
   2-login:
+    internal: true
     desc: Login to Stripe CLI (opens browser)
-    cmds:
-      - stripe login
-
-  2-login-interactive:
-    desc: Login to Stripe CLI (manual pairing code)
-    interactive: true
-    cmds:
-      - stripe login --interactive
-
-  3-env:
-    desc: Create .env file and add STRIPE_SECRET_KEY
+    status:
+      - '{{.STRIPE_BINARY}} --config {{.STRIPE_CONFIG}} config --list 2>/dev/null | grep -q "test_mode_api_key"'
     cmds:
       - |
-        if [ -f .env ]; then
-          echo ".env already exists"
-        else
+        echo "════════════════════════════════════════════════════"
+        echo "⚠️  BROWSER AUTH REQUIRED"
+        echo "════════════════════════════════════════════════════"
+        echo "A browser window will open for Stripe authentication."
+        echo "Please authorize the CLI in your browser to continue."
+        echo ""
+      - '{{.STRIPE_BINARY}} --config {{.STRIPE_CONFIG}} login'
+
+  login-interactive:
+    desc: Login to Stripe CLI (manual pairing code for headless/SSH)
+    interactive: true
+    cmds:
+      - '{{.STRIPE_BINARY}} --config {{.STRIPE_CONFIG}} login --interactive'
+
+  3-env:
+    internal: true
+    desc: Create .env and auto-populate STRIPE_SECRET_KEY and STRIPE_WHSEC from CLI
+    cmds:
+      - |
+        # Create .env if needed
+        if [ ! -f .env ]; then
           cp .env.example .env
           echo "✓ Created .env from .env.example"
         fi
-        echo ""
-        echo "ACTION: Get your API key from {{.STRIPE_URL_API_KEYS}}"
-        open "{{.STRIPE_URL_API_KEYS}}" 2>/dev/null || true
-        echo "  1. Copy your Secret key (sk_test_...)"
-        echo "  2. Edit .env and set STRIPE_SECRET_KEY"
-        echo "  3. Run: task stripe:4-fixtures"
+
+        # Auto-fetch API key from Stripe CLI config
+        API_KEY=$({{.STRIPE_BINARY}} --config {{.STRIPE_CONFIG}} config --list 2>/dev/null | grep "test_mode_api_key" | cut -d'=' -f2 | tr -d ' ' || true)
+
+        if [ -n "$API_KEY" ] && [ "$API_KEY" != "sk_test_xxx" ]; then
+          # Update STRIPE_SECRET_KEY in .env
+          if grep -q "^STRIPE_SECRET_KEY=" .env; then
+            sed -i.bak "s|^STRIPE_SECRET_KEY=.*|STRIPE_SECRET_KEY=$API_KEY|" .env && rm -f .env.bak
+          else
+            echo "STRIPE_SECRET_KEY=$API_KEY" >> .env
+          fi
+          echo "✓ Auto-configured STRIPE_SECRET_KEY from Stripe CLI"
+        else
+          echo "⚠ Could not auto-fetch API key. Get it manually:"
+          echo "  {{.STRIPE_URL_API_KEYS}}"
+          open "{{.STRIPE_URL_API_KEYS}}" 2>/dev/null || true
+        fi
+
+        # Auto-fetch webhook secret
+        WHSEC=$({{.STRIPE_BINARY}} --config {{.STRIPE_CONFIG}} listen --print-secret 2>/dev/null || true)
+
+        if [ -n "$WHSEC" ] && [ "$WHSEC" != "whsec_xxx" ]; then
+          # Update STRIPE_WHSEC in .env
+          if grep -q "^STRIPE_WHSEC=" .env; then
+            sed -i.bak "s|^STRIPE_WHSEC=.*|STRIPE_WHSEC=$WHSEC|" .env && rm -f .env.bak
+          else
+            echo "STRIPE_WHSEC=$WHSEC" >> .env
+          fi
+          echo "✓ Auto-configured STRIPE_WHSEC from Stripe CLI"
+        else
+          echo "⚠ Could not auto-fetch webhook secret. Run 'task stripe:listen' to get it."
+        fi
 
   4-fixtures:
+    internal: true
     desc: Load test products into Stripe
+    status:
+      - '{{.STRIPE_BINARY}} --config {{.STRIPE_CONFIG}} products list --limit 1 2>/dev/null | grep -q "prod_"'
     cmds:
       - echo "Loading test products (Hobby + Freelancer plans)..."
-      - stripe fixtures stripe_bootstrap/stripe-fixtures.json
+      - '{{.STRIPE_BINARY}} --config {{.STRIPE_CONFIG}} fixtures stripe_bootstrap/stripe-fixtures.json'
       - 'echo "✓ Done! View at {{.STRIPE_URL_PRODUCTS}}"'
 
-  5-listen:
+  listen:
     desc: Forward webhooks to local server (shows webhook secret on start)
     cmds:
       - |
         echo "Starting webhook listener -> {{.STRIPE_URL_LOCAL_WEBHOOK}}"
         echo "Copy the whsec_xxx secret to .env as STRIPE_WHSEC"
-      - stripe listen --forward-to {{.STRIPE_URL_LOCAL_WEBHOOK}}
+      - '{{.STRIPE_BINARY}} --config {{.STRIPE_CONFIG}} listen --forward-to {{.STRIPE_URL_LOCAL_WEBHOOK}}'
 
-  6-test:
-    desc: Test webhook integration
+  test:
+    desc: Test webhook integration (trigger product.created event)
     cmds:
       - echo "Triggering test event..."
-      - stripe trigger product.created
-      - 'echo "✓ Check your stripe:5-listen terminal for the event"'
+      - '{{.STRIPE_BINARY}} --config {{.STRIPE_CONFIG}} trigger product.created'
+      - 'echo "✓ Check your stripe:listen terminal for the event"'
 
   # === Webhook Modes ===
-  listen:live:
+  listen-live:
     desc: Forward Stripe webhooks (live mode)
     cmds:
-      - stripe listen --forward-to {{.STRIPE_URL_LOCAL_WEBHOOK}} --live
+      - '{{.STRIPE_BINARY}} --config {{.STRIPE_CONFIG}} listen --forward-to {{.STRIPE_URL_LOCAL_WEBHOOK}} --live'
 
-  webhook:prod:
+  webhook-prod:
     desc: Show production webhook setup instructions
     silent: true
     cmds:
@@ -112,54 +194,129 @@ tasks:
         open "{{.STRIPE_URL_WEBHOOKS}}" 2>/dev/null || true
 
   # === Test Events ===
-  test:price:
+  test-price:
     desc: Trigger a test price.created event
     cmds:
-      - stripe trigger price.created
+      - '{{.STRIPE_BINARY}} --config {{.STRIPE_CONFIG}} trigger price.created'
 
-  test:subscription:
+  test-subscription:
     desc: Trigger a test subscription event
     cmds:
-      - stripe trigger customer.subscription.created
+      - '{{.STRIPE_BINARY}} --config {{.STRIPE_CONFIG}} trigger customer.subscription.created'
 
-  test:checkout:
+  test-checkout:
     desc: Trigger checkout session completed
     cmds:
-      - stripe trigger checkout.session.completed
+      - '{{.STRIPE_BINARY}} --config {{.STRIPE_CONFIG}} trigger checkout.session.completed'
 
-  test:all:
+  test-all:
     desc: Trigger multiple test events
     cmds:
-      - stripe trigger product.created
+      - '{{.STRIPE_BINARY}} --config {{.STRIPE_CONFIG}} trigger product.created'
       - sleep 1
-      - stripe trigger price.created
+      - '{{.STRIPE_BINARY}} --config {{.STRIPE_CONFIG}} trigger price.created'
       - sleep 1
-      - stripe trigger customer.subscription.created
+      - '{{.STRIPE_BINARY}} --config {{.STRIPE_CONFIG}} trigger customer.subscription.created'
 
   clean:
     desc: Clean up Stripe CLI auth and local .env for fresh setup
     cmds:
-      - stripe logout 2>/dev/null || true
+      - rm -rf {{.STRIPE_CONFIG_DIR}}
       - rm -f .env
-      - 'echo "✓ Cleaned. Run setup steps again starting with: task stripe:1-install"'
+      - 'echo "✓ Cleaned. Run: task stripe:setup"'
 
-  # === Info ===
-  info:
-    desc: Show Stripe configuration status
+  # === Status & Diagnostics ===
+  status:
+    desc: Check Stripe configuration status
     silent: true
     cmds:
       - |
-        echo "Stripe Secrets:"
-        [ -n "${STRIPE_SECRET_KEY}" ] && echo "  ✓ STRIPE_SECRET_KEY" || echo "  ✗ STRIPE_SECRET_KEY"
-        [ -n "${STRIPE_WHSEC}" ] && echo "  ✓ STRIPE_WHSEC" || echo "  ✗ STRIPE_WHSEC"
+        echo "Stripe Configuration Status"
+        echo "============================"
         echo ""
-        echo "Stripe URLs:"
-        echo "  SUCCESS: ${STRIPE_SUCCESS_URL:-[NOT SET]}"
-        echo "  CANCEL:  ${STRIPE_CANCEL_URL:-[NOT SET]}"
-        echo "  BILLING: ${STRIPE_BILLING_RETURN_URL:-[NOT SET]}"
+        echo "CLI:"
+        if {{.STRIPE_BINARY}} --version >/dev/null 2>&1; then
+          echo "  ✓ Stripe CLI installed ($({{.STRIPE_BINARY}} --version 2>&1 | head -1))"
+        else
+          echo "  ✗ Stripe CLI not installed (run: task stripe:setup)"
+        fi
 
-  # === Gitignore ===
+        if [ -f "{{.STRIPE_CONFIG}}" ]; then
+          echo "  ✓ Local config: {{.STRIPE_CONFIG}}"
+        else
+          echo "  ✗ No local config (run: task stripe:setup)"
+        fi
+
+        if {{.STRIPE_BINARY}} --config {{.STRIPE_CONFIG}} config --list 2>/dev/null | grep -q "test_mode_api_key"; then
+          echo "  ✓ Logged in to Stripe"
+        else
+          echo "  ✗ Not logged in (run: task stripe:setup)"
+        fi
+
+        echo ""
+        echo "Environment (.env):"
+        if [ -f .env ]; then
+          echo "  ✓ .env file exists"
+        else
+          echo "  ✗ .env file missing (run: task stripe:setup)"
+        fi
+
+        if [ -n "${STRIPE_SECRET_KEY}" ] && [ "${STRIPE_SECRET_KEY}" != "sk_test_xxx" ]; then
+          echo "  ✓ STRIPE_SECRET_KEY configured"
+        else
+          echo "  ✗ STRIPE_SECRET_KEY not set"
+        fi
+
+        if [ -n "${STRIPE_WHSEC}" ] && [ "${STRIPE_WHSEC}" != "whsec_xxx" ]; then
+          echo "  ✓ STRIPE_WHSEC configured"
+        else
+          echo "  ✗ STRIPE_WHSEC not set (run: task stripe:setup)"
+        fi
+
+        echo ""
+        echo "Products:"
+        PRODUCT_COUNT=$({{.STRIPE_BINARY}} --config {{.STRIPE_CONFIG}} products list --limit 100 2>/dev/null | grep -c "prod_" || echo "0")
+        if [ "$PRODUCT_COUNT" -gt 0 ]; then
+          echo "  ✓ $PRODUCT_COUNT product(s) in Stripe"
+        else
+          echo "  ✗ No products (run: task stripe:setup)"
+        fi
+
+        echo ""
+        echo "Quick Actions:"
+        echo "  task stripe:open      # Open Stripe Dashboard"
+        echo "  task stripe:logs      # View recent events"
+        echo "  task stripe:test      # Trigger test webhook"
+
+  logs:
+    desc: View recent Stripe events
+    cmds:
+      - '{{.STRIPE_BINARY}} --config {{.STRIPE_CONFIG}} events list --limit 10'
+
+  # === Quick Open Tasks ===
+  open:
+    desc: Open Stripe Dashboard
+    cmds:
+      - 'open "{{.STRIPE_URL_DASHBOARD}}" 2>/dev/null || echo "Open: {{.STRIPE_URL_DASHBOARD}}"'
+
+  open-products:
+    desc: Open Stripe Products page
+    cmds:
+      - 'open "{{.STRIPE_URL_PRODUCTS}}" 2>/dev/null || echo "Open: {{.STRIPE_URL_PRODUCTS}}"'
+
+  open-webhooks:
+    desc: Open Stripe Webhooks page
+    cmds:
+      - 'open "{{.STRIPE_URL_WEBHOOKS}}" 2>/dev/null || echo "Open: {{.STRIPE_URL_WEBHOOKS}}"'
+
+  open-keys:
+    desc: Open Stripe API Keys page
+    cmds:
+      - 'open "{{.STRIPE_URL_API_KEYS}}" 2>/dev/null || echo "Open: {{.STRIPE_URL_API_KEYS}}"'
+
+  # === Gitignore (internal - called by main Taskfile) ===
   gitignore:
+    internal: true
     desc: Output gitignore patterns for Stripe
     silent: true
     cmds:
@@ -168,5 +325,6 @@ tasks:
         echo ".env"
         echo ".env.local"
         echo ".env.*.local"
+        echo "{{.STRIPE_CONFIG_DIR}}/"
         echo "*.log"
         echo "stripe.out"

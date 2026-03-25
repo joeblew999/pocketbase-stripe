@@ -22,15 +22,12 @@ The all-in-one starter kit for high-performance SaaS applications. Frontend-agno
 ### Setup
 
 ```bash
-# Clone and enter the repo ( or your fork )
+# Clone and enter the repo (or your fork)
 git clone https://github.com/mrwyndham/pocketbase-stripe
 cd pocketbase-stripe
 
-# One-time Stripe setup
-task stripe:1-install    # Install Stripe CLI
-task stripe:2-login      # Authenticate with Stripe
-task stripe:3-env        # Create .env from template
-task stripe:4-fixtures   # Load test products
+# One-command Stripe setup (installs CLI, logs in, configures .env, loads fixtures)
+task stripe:setup
 
 # One-time PocketBase setup
 task pb:1-superuser      # Create admin account
@@ -38,9 +35,11 @@ task pb:2-schema         # Import collections schema
 
 # Run the application
 task pc:up               # Recommended: process-compose (PocketBase + Stripe listener)
-# OR
-task dev                 # Direct: just PocketBase (run stripe:5-listen separately)
-# OR
+```
+
+Alternative run options:
+```bash
+task pc:up-detached      # Run in background (no TUI)
 task docker:build && task docker:run  # Docker container
 ```
 
@@ -54,7 +53,6 @@ See **[DEVELOPMENT.md](DEVELOPMENT.md)** for detailed development workflows incl
 
 ```bash
 task --list              # See all available tasks
-task info                # Show current configuration
 task debug               # Print all Taskfile vars
 ```
 
@@ -94,7 +92,7 @@ task stripe:4-fixtures   # Creates Hobby ($10/mo) and Freelancer ($20/mo) plans
 For production, create a webhook endpoint in [Stripe Dashboard](https://dashboard.stripe.com/webhooks):
 
 ```bash
-task stripe:webhook:prod  # Shows setup instructions
+task stripe:webhook-prod  # Shows setup instructions
 ```
 
 Endpoint URL: `https://YOUR_DOMAIN/stripe`

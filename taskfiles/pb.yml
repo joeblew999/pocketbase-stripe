@@ -11,23 +11,33 @@ vars:
   PB_URL_DOCS: https://pocketbase.io/docs
   # Versions
   PB_VERSION: v0.34.2
-  # Binary
-  BINARY: bin/pocketbase-stripe
+  # Binary (cross-platform: adds .exe on Windows)
+  PB_BINARY: bin/pocketbase-stripe{{exeExt}}
+  # Superuser (loaded from .env via dotenv in main Taskfile)
+  PB_SUPERUSER_EMAIL: '{{.PB_SUPERUSER_EMAIL | default "admin@example.com"}}'
+  PB_SUPERUSER_PASSWORD: '{{.PB_SUPERUSER_PASSWORD | default "password123"}}'
 
 tasks:
   # === Debug ===
   debug:
-    desc: Print all PocketBase vars
+    desc: Print all PocketBase vars and status
     silent: true
     cmds:
       - |
-        echo "PB_HOST:            {{.PB_HOST}}"
-        echo "PB_PORT:            {{.PB_PORT}}"
-        echo "PB_URL_LOCAL:       {{.PB_URL_LOCAL}}"
-        echo "PB_URL_LOCAL_ADMIN: {{.PB_URL_LOCAL_ADMIN}}"
-        echo "PB_URL_DOCS:        {{.PB_URL_DOCS}}"
-        echo "PB_VERSION:         {{.PB_VERSION}}"
-        echo "BINARY:             {{.BINARY}}"
+        echo "PB_HOST:               {{.PB_HOST}}"
+        echo "PB_PORT:               {{.PB_PORT}}"
+        echo "PB_URL_LOCAL:          {{.PB_URL_LOCAL}}"
+        echo "PB_URL_LOCAL_ADMIN:    {{.PB_URL_LOCAL_ADMIN}}"
+        echo "PB_URL_DOCS:           {{.PB_URL_DOCS}}"
+        echo "PB_VERSION:            {{.PB_VERSION}}"
+        echo "PB_BINARY:             {{.PB_BINARY}}"
+        echo "PB_SUPERUSER_EMAIL:    {{.PB_SUPERUSER_EMAIL}}"
+        echo "PB_SUPERUSER_PASSWORD: ********"
+        echo ""
+        echo "Status:"
+        echo "  Binary: {{.PB_BINARY}}"
+        echo "  Server: {{.PB_URL_LOCAL}} ({{.PB_HOST}}:{{.PB_PORT}})"
+        echo "  Admin:  {{.PB_URL_LOCAL_ADMIN}}"
 
   # === Dependencies ===
   deps:
@@ -43,44 +53,73 @@ tasks:
     env:
       GOWORK: "off"
     cmds:
-      - go build -o {{.BINARY}} main.go
+      - go build -o {{.PB_BINARY}} main.go
 
-  build:linux:
+  build-linux:
     desc: Build for Linux amd64 (deployment)
     env:
       GOWORK: "off"
       GOOS: linux
       GOARCH: amd64
     cmds:
-      - go build -o {{.BINARY}}-linux-amd64 main.go
+      - go build -o bin/pocketbase-stripe-linux-amd64 main.go
 
-  build:darwin:
+  build-darwin:
     desc: Build for macOS (arm64)
     env:
       GOWORK: "off"
       GOOS: darwin
       GOARCH: arm64
     cmds:
-      - go build -o {{.BINARY}}-darwin-arm64 main.go
+      - go build -o bin/pocketbase-stripe-darwin-arm64 main.go
 
-  build:windows:
+  build-windows:
     desc: Build for Windows amd64
     env:
       GOWORK: "off"
       GOOS: windows
       GOARCH: amd64
     cmds:
-      - go build -o {{.BINARY}}-windows-amd64.exe main.go
+      - go build -o bin/pocketbase-stripe-windows-amd64.exe main.go
 
   # === PocketBase Setup (numbered for order) ===
   1-superuser:
     desc: Create PocketBase superuser (admin account)
     env:
       GOWORK: "off"
+    status:
+      - test -d pb_data && test -f pb_data/data.db
     cmds:
-      - 'echo "Creating superuser: admin@example.com / password123"'
-      - go run main.go superuser create admin@example.com password123
-      - 'echo "✓ Done! Login at {{.PB_URL_LOCAL_ADMIN}}"'
+      - |
+        # Generate random password if using default
+        EMAIL="{{.PB_SUPERUSER_EMAIL}}"
+        PASSWORD="{{.PB_SUPERUSER_PASSWORD}}"
+
+        if [ "$PASSWORD" = "password123" ]; then
+          # Generate 16-char random password
+          PASSWORD=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 16)
+          echo "✓ Generated random password"
+        fi
+
+        # Update .env with credentials
+        if [ -f .env ]; then
+          if grep -q "^PB_SUPERUSER_EMAIL=" .env; then
+            sed -i.bak "s|^PB_SUPERUSER_EMAIL=.*|PB_SUPERUSER_EMAIL=$EMAIL|" .env && rm -f .env.bak
+          else
+            echo "PB_SUPERUSER_EMAIL=$EMAIL" >> .env
+          fi
+
+          if grep -q "^PB_SUPERUSER_PASSWORD=" .env; then
+            sed -i.bak "s|^PB_SUPERUSER_PASSWORD=.*|PB_SUPERUSER_PASSWORD=$PASSWORD|" .env && rm -f .env.bak
+          else
+            echo "PB_SUPERUSER_PASSWORD=$PASSWORD" >> .env
+          fi
+          echo "✓ Saved credentials to .env"
+        fi
+
+        echo "Creating superuser: $EMAIL"
+        go run main.go superuser create "$EMAIL" "$PASSWORD"
+        echo "✓ Done! Login at {{.PB_URL_LOCAL_ADMIN}}"
 
   2-schema:
     desc: Import collections schema for Stripe integration
@@ -99,7 +138,7 @@ tasks:
       - 'echo "✓ Cleaned. Run: task pc:up, then task pb:1-superuser"'
 
   # === Source Reference ===
-  src:clone:
+  src-clone:
     desc: Clone PocketBase source for reference (helps with future upgrades)
     cmds:
       - mkdir -p .src
@@ -107,22 +146,12 @@ tasks:
     status:
       - test -d .src/pocketbase
 
-  src:update:
+  src-update:
     desc: Update PocketBase source to specific version
     dir: .src/pocketbase
     cmds:
       - git fetch --tags
       - git checkout {{.PB_VERSION}}
-
-  # === Info ===
-  info:
-    desc: Show PocketBase configuration status
-    silent: true
-    cmds:
-      - |
-        echo "Binary: {{.BINARY}}"
-        echo "Server: {{.PB_URL_LOCAL}} ({{.PB_HOST}}:{{.PB_PORT}})"
-        echo "Admin:  {{.PB_URL_LOCAL_ADMIN}}"
 
   # === Gitignore ===
   gitignore:
